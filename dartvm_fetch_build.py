@@ -1,0 +1,77 @@
+import os
+import subprocess
+import sys
+
+# assume git and cmake (64 bits) command is in PATH
+GIT_CMD = "git"
+CMAKE_CMD = "cmake"
+NINJA_CMD = "ninja"
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CMAKE_TEMPLATE_FILE = os.path.join(SCRIPT_DIR, 'scripts', 'CMakeLists.txt')
+CREATE_SRCLIST_FILE = os.path.join(SCRIPT_DIR, 'scripts', 'dartvm_create_srclist.py')
+
+SDK_DIR = os.path.join(SCRIPT_DIR, 'dartsdk')
+BUILD_DIR = os.path.join(SCRIPT_DIR, 'build')
+
+#DART_GIT_URL = 'https://dart.googlesource.com/sdk.git'
+DART_GIT_URL = 'https://github.com/dart-lang/sdk.git'
+
+def checkout_dart(ver):
+    clonedir = os.path.join(SDK_DIR, 'v'+ver)
+    # if the source directory is existed. assume the code has already been cloned
+    if not os.path.exists(clonedir):
+        # minimum clone repository at the target branch
+        subprocess.run([GIT_CMD, '-c', 'advice.detachedHead=false', 'clone', '-b', ver, '--depth', '1', '--filter=blob:none', '--sparse', '--progress', DART_GIT_URL, clonedir], check=True)
+        # checkout only needed sources (runtime and tools)
+        subprocess.run([GIT_CMD, 'sparse-checkout', 'set', 'runtime', 'tools'], cwd=clonedir, check=True)
+        # delete some unnecessary files
+        with os.scandir(clonedir) as it:
+            for entry in it:
+                if entry.is_file():
+                    os.remove(entry.path)
+                elif entry.is_dir() and entry.name == '.git':
+                    # should ".git" directory be removed?
+                    pass
+        # make version
+        subprocess.run([sys.executable, 'tools/make_version.py', '--output', 'runtime/vm/version.cc', '--input', 'runtime/vm/version_in.cc'], cwd=clonedir, check=True)
+    
+    return clonedir
+
+def get_dartlib_name(ver: str, arch: str, os_name: str):
+    return f'dartvm{ver}_{os_name}_{arch}'
+
+def cmake_dart(ver: str, arch: str, os_name: str, target_dir: str):
+    # On windows, need developer command prompt for x64 (can check with "cl" command)
+    # create dartsdk/vx.y.z/CMakefile.list
+    with open(CMAKE_TEMPLATE_FILE, 'r') as f:
+        code = f.read()
+    with open(os.path.join(target_dir, 'CMakeLists.txt'), 'w') as f:
+        f.write(code.replace('VERSION_PLACE_HOLDER', ver))
+
+    # create dartsdk/vx.y.z/Config.cmake.in
+    with open(os.path.join(target_dir, 'Config.cmake.in'), 'w') as f:
+        f.write('@PACKAGE_INIT@\n\n')
+        f.write('include ( "${CMAKE_CURRENT_LIST_DIR}/dartvmTarget.cmake" )\n\n')
+    
+    # generate source list
+    subprocess.run([sys.executable, CREATE_SRCLIST_FILE, target_dir], check=True)
+    # cmake -GNinja -Bout3.0.3 -DCMAKE_BUILD_TYPE=Release
+    #   add -DTARGET_ARCH=x64 for analyzing x64 libapp.so
+    #   add -DTARGET_OS=ios for analyzing ios App
+    builddir = os.path.join(BUILD_DIR, get_dartlib_name(ver, arch, os_name))
+    subprocess.run([CMAKE_CMD, '-GNinja', '-B', builddir, f'-DTARGET_OS={os_name}', f'-DTARGET_ARCH={arch}', '-DCMAKE_BUILD_TYPE=Release', '--log-level=NOTICE'], cwd=target_dir, check=True)
+    
+    # build and install dart vm library to packages directory
+    subprocess.run([NINJA_CMD], cwd=builddir, check=True)
+    subprocess.run([CMAKE_CMD, '--install', '.'], cwd=builddir, check=True)
+
+def fetch_and_build(ver: str, arch: str, os_name: str):
+    outdir = checkout_dart(ver)    
+    cmake_dart(ver, arch, os_name, outdir)
+
+if __name__ == "__main__":
+    ver = sys.argv[1]
+    os_name = 'android' if len(sys.argv) < 3 else sys.argv[2]
+    arch = 'arm64' if len(sys.argv) < 4 else sys.argv[3]
+    fetch_and_build(ver, arch, os_name)

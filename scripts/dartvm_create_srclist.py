@@ -1,0 +1,95 @@
+#!/usr/bin/python3
+import glob
+import os
+import re
+import sys
+
+def extract_sources(gni_file):
+    with open(gni_file, 'r') as f:
+        data = f.read()
+    
+    objs = {}
+    matches = re.findall(r'\s*(\w+?)\s*=\s*\[\s*([\"\w\-\.\,\s]+?),?\s*\]\s*', data)
+    for name, names in matches:
+        srcs = re.findall(r'\"([\w\-\.]+)\",?\s*', names)
+        objs[name] = srcs
+    
+    return objs
+
+def get_src_files(path):
+    name = os.path.split(path)[-1]
+    gni_file = os.path.join(path, name+'_sources.gni')
+    objs = extract_sources(gni_file)
+    return objs[name+'_sources']
+
+def get_default_src_files(gni_file):
+    objs = extract_sources(gni_file)
+    for key in objs.keys():
+        if key.endswith('_cc_files'):
+            return objs[key]
+
+def get_src_from_path(path):
+    srcs = glob.glob(os.path.join(path, '*.cc'))
+    return srcs
+
+# runtime directory
+BASEDIR = sys.argv[1] if len(sys.argv) > 1 else '.'
+os.chdir(BASEDIR)
+BASEDIR = '.'
+
+# check if BASEDIR contains runtime directory in case user input is dart sdk directory
+tmpdir = os.path.join(BASEDIR, 'runtime')
+if os.path.isdir(tmpdir):
+    BASEDIR = tmpdir
+
+cc_srcs = []
+hdrs = []
+for path in ('vm', 'platform', 'vm/heap', 'vm/ffi'):
+    if path[-1] == '/':
+        path = path[:-1]
+    path = os.path.join(BASEDIR, path)
+    if not os.path.isdir(path):
+        continue
+    srcs = get_src_files(path)
+    #cc_srcs.extend([ os.path.join(path, src) for src in srcs if src.endswith('.cc') ])
+    for src in srcs:
+        cc_srcs.append(os.path.join(path, src))
+        if src.endswith('h'):
+            hdrs.append(os.path.join(path, src))
+
+# extra source files
+extra_files = ( 'vm/version.cc', 'vm/dart_api_impl.cc', 'vm/native_api_impl.cc',
+        'vm/compiler/runtime_api.cc', 'vm/compiler/jit/compiler.cc')
+for name in extra_files:
+    cc_srcs.append(os.path.join(BASEDIR, name))
+
+# extra public heaer
+hdrs.append(os.path.join(BASEDIR, 'vm/version.h'))
+
+# other libraries
+for lib in ('async', 'core', 'developer', 'ffi', 'isolate', 'math', 'typed_data', 'vmservice'):
+    srcs = get_default_src_files(os.path.join(BASEDIR, 'lib', lib+'_sources.gni'))
+    cc_srcs.extend([ os.path.join(BASEDIR, 'lib', src) for src in srcs if src.endswith('.cc') ])
+
+cc_srcs.extend(get_src_from_path(BASEDIR+'/third_party/double-conversion/src'))
+
+#print('VMSRCS='+' '.join(cc_srcs))
+#print(' '.join(cc_srcs))
+#with open('sources.list', 'w') as f:
+#    f.write('\n'.join(cc_srcs))
+
+# CMake file need forward slash in path even in Windows
+if os.sep == '\\':
+    cc_srcs = [ src.replace(os.sep, '/') for src in cc_srcs ]
+    hdrs = [ src.replace(os.sep, '/') for src in hdrs ]
+
+with open('sourcelist.cmake', 'w') as f:
+    f.write('set(SRCS \n    ')
+    f.write('\n    '.join(cc_srcs))
+    f.write('\n)\n')
+    
+    #f.write('\n')
+    #f.write('set(PUB_HDRS \n    ')
+    #f.write('\n    '.join(hdrs))
+    #f.write('\n)\n')
+
