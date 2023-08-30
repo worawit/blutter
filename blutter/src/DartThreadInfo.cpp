@@ -40,8 +40,8 @@ static void initThreadOffsetNames()
 #endif
 	threadOffsetNames[dart::Thread::stack_overflow_flags_offset()] = "stack_overflow_flags";
 	threadOffsetNames[dart::Thread::safepoint_state_offset()] = "safepoint_state";
-	threadOffsetNames[dart::Thread::callback_code_offset()] = "ffi_callback_code";
-	threadOffsetNames[dart::Thread::callback_stack_return_offset()] = "ffi_callback_stack_return";
+	//threadOffsetNames[dart::Thread::callback_code_offset()] = "ffi_callback_code"; // removed in Dart 3.1.0
+	//threadOffsetNames[dart::Thread::callback_stack_return_offset()] = "ffi_callback_stack_return"; // removed in Dart 3.1.0
 	threadOffsetNames[dart::Thread::exit_through_ffi_offset()] = "exit_through_ffi";
 	threadOffsetNames[dart::Thread::api_top_scope_offset()] = "api_top_scope";
 	threadOffsetNames[dart::Thread::double_truncate_round_supported_offset()] = "double_truncate_round_supported";
@@ -54,7 +54,7 @@ static void initThreadOffsetNames()
 	threadOffsetNames[dart::Thread::store_buffer_block_offset()] = "store_buffer_block";
 	threadOffsetNames[dart::Thread::marking_stack_block_offset()] = "marking_stack_block";
 	threadOffsetNames[dart::Thread::top_exit_frame_info_offset()] = "top_exit_frame_info";
-	threadOffsetNames[dart::Thread::heap_offset()] = "heap";
+	//threadOffsetNames[dart::Thread::heap_offset()] = "heap"; // removed in Dart 3.1.0
 	threadOffsetNames[dart::Thread::top_offset()] = "top";
 	threadOffsetNames[dart::Thread::end_offset()] = "end";
 	threadOffsetNames[dart::Thread::vm_tag_offset()] = "vm_tag";

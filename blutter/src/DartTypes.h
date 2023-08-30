@@ -3,7 +3,11 @@
 // forward declaration
 class DartClass;
 class DartType;
+#ifdef HAS_SHARED_CLASS_TABLE
 class DartTypeRef;
+#else
+//class DartRecordType;
+#endif
 class DartTypeParameter;
 class DartFunctionType;
 class DartTypeDb;
@@ -13,7 +17,11 @@ public:
 	enum Kind : uint8_t {
 		TypeParam = 1,
 		Type,
+#ifdef HAS_SHARED_CLASS_TABLE
 		TypeRef,  // it is ref to Type, use it when self reference
+#else
+		RecordType, // TODO:
+#endif
 		FunctionType,
 	};
 
@@ -31,10 +39,12 @@ public:
 		ASSERT(kind == Type);
 		return reinterpret_cast<DartType*>(this);
 	}
+#ifdef HAS_SHARED_CLASS_TABLE
 	DartTypeRef* AsTypeRef() {
 		ASSERT(kind == TypeRef);
 		return reinterpret_cast<DartTypeRef*>(this);
 	}
+#endif
 	DartTypeParameter* AsTypeParameter() {
 		ASSERT(kind == TypeParam);
 		return reinterpret_cast<DartTypeParameter*>(this);
@@ -57,10 +67,6 @@ public:
 	std::string SubvectorName(int from_index, int len) const;
 	std::string ToString() const { return args.empty() ? std::string() : SubvectorName(0, (int)args.size()); }
 	size_t Length() const { return args.size(); }
-
-	//bool operator==(const DartTypeArguments& rhs) const {
-	//	if 
-	//}
 
 	static const DartTypeArguments Null;
 
@@ -92,6 +98,7 @@ protected:
 	friend class DartApp;
 };
 
+#ifdef HAS_SHARED_CLASS_TABLE
 class DartTypeRef : public DartAbstractType
 {
 public:
@@ -107,6 +114,7 @@ protected:
 
 	friend class DartTypeDb;
 };
+#endif
 
 class DartTypeParameter : public DartAbstractType {
 public:

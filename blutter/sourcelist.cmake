@@ -41,5 +41,5 @@ set(SRCS
     il.h
     main.cpp
     #pch.cpp
-    #pch.h
+    pch.h
 )

@@ -580,7 +580,9 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		return "TypeParameter: " + app.typeDb->FindOrAdd(dart::TypeParameter::RawCast(obj.ptr()))->ToString();
 	case dart::kFunctionTypeCid:
 		return "FunctionType: " + app.typeDb->FindOrAdd(dart::FunctionType::RawCast(obj.ptr()))->ToString();
+#ifdef HAS_SHARED_CLASS_TABLE
 	case dart::kTypeRefCid:
+#endif
 	case dart::kTypeParametersCid:
 		// might be in a Type but not in Object Pool directly
 		return std::format("{} (ptr: {:#x})", obj.ToCString(), (uint64_t)obj.ptr());

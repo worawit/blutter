@@ -9,7 +9,7 @@ def extract_sources(gni_file):
         data = f.read()
     
     objs = {}
-    matches = re.findall(r'\s*(\w+?)\s*=\s*\[\s*([\"\w\-\.\,\s]+?),?\s*\]\s*', data)
+    matches = re.findall(r'\s*(\w+?)\s*=\s*\[\s*([\"\w\-\.\/\,\s]+?),?\s*\]\s*', data)
     for name, names in matches:
         srcs = re.findall(r'\"([\w\-\.]+)\",?\s*', names)
         objs[name] = srcs
