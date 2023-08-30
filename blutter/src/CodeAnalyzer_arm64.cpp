@@ -12,6 +12,11 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 	if (objType == dart::ObjectPool::EntryType::kTaggedObject) {
 		//val = (uintptr_t)pool.ObjectAt(idx);
 		auto ptr = pool.ObjectAt(idx);
+		// Smi is special case. Have to handle first
+		if (!ptr.IsHeapObject()) {
+			return new VarInteger(dart::kSmiCid, dart::RawSmiValue(dart::Smi::RawCast(ptr)));
+		}
+
 		if (ptr.IsRawNull())
 			return new VarNull();
 
@@ -485,9 +490,10 @@ AsmTexts CodeAnalyzer::convertAsm(AsmInstructions& asm_insns)
 						// but the thread offset information is nice to have in assembly
 						// thread access always be the last operand
 						auto& op = insn->detail->arm64.operands[insn->detail->arm64.op_count - 1];
-						ASSERT(op.type == ARM64_OP_MEM && op.mem.base == CSREG_DART_THR);
-						text_asm.threadOffset = op.mem.disp;
-						text_asm.dataType = AsmText::ThreadOffset;
+						if (op.type == ARM64_OP_MEM && op.mem.base == CSREG_DART_THR) {
+							text_asm.threadOffset = op.mem.disp;
+							text_asm.dataType = AsmText::ThreadOffset;
+						}
 					}
 					else if (op_ptr[1] == '2' && op_ptr[2] == '7') {
 						*ptr++ = 'P';

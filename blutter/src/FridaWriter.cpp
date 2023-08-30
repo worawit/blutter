@@ -119,7 +119,9 @@ void FridaWriter::Create(const char* filename)
 				of << "{id:" << dartCls->Id() << ",";
 				of << "name:" << Util::Quote(dartCls->Name()) << ",";
 				of << "lenOffset:" << AOT_TypedDataBase_length_offset << ",";
-				of << "dataOffset:" << AOT_TypedData_payload_offset << "},\n";
+				// current version name is "AOT_TypedData_payload_offset" but old version name is "AOT_TypedData_data_offset"
+				// function from UntaggedTypedData is always same
+				of << "dataOffset:" << dart::UntaggedTypedData::payload_offset() << "},\n";
 				break;
 			case dart::kInstanceCid:
 				of << "{id:" << dartCls->Id() << ",";

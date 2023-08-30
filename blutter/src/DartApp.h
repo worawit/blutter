@@ -31,9 +31,9 @@ public:
 private:
 	DartLibrary* addLibraryClass(const dart::Library& library, const dart::Class& cls);
 	DartLibrary* addLibrary(const dart::Library& library);
-	void loadFromClassTable(dart::ClassTable* table);
+	void loadFromClassTable(dart::IsolateGroup* ig);
 	void loadStubs(dart::ObjectStore* store);
-	void loadFromInstructions(dart::ObjectStore* store);
+	void findFunctionInHeap();
 	void finalizeFunctionsInfo();
 	void loadFromObjectPool();
 	void walkObject(dart::Object& obj); // to check field types from existed object

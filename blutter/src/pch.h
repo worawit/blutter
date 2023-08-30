@@ -37,6 +37,22 @@ PRAGMA_WARNING(push, 0)
 #include <vm/compiler/runtime_offsets_extracted.h>
 PRAGMA_WARNING(pop)
 
+#ifdef OLD_MAP_SET_NAME
+namespace dart {
+	using Map = LinkedHashMap;
+	using ConstMap = ImmutableLinkedHashMap;
+	using Set = LinkedHashSet;
+	using ConstSet = ImmutableLinkedHashSet;
+	
+	enum ClassIdX : intptr_t {
+		kMapCid = kLinkedHashMapCid,
+		kConstMapCid = kImmutableLinkedHashMapCid,
+		kSetCid = kLinkedHashSetCid,
+		kConstSetCid = kImmutableLinkedHashSetCid,
+	};
+};
+#endif
+
 #if defined SEMIDBG && !defined DEBUG
 // the debug build configuration that use release configuration but no optimization
 // so only the executable are fully debuggable. but ASSERT is gone

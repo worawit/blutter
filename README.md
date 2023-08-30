@@ -61,8 +61,8 @@ If the blutter executable for required Dart version does not exists, the script 
 
 
 ## Generating Visual Studio Solution for Development
-I use Visual Studio to delevlop Blutter on Windows. Here is a command to generate a solution from the real blutter path.
+I use Visual Studio to delevlop Blutter on Windows. ```--vs-sln``` options can be used to generate a Visual Studio solution.
 ```
-cmake -G "Visual Studio 17 2022" -A x64 -B ..\build\vs -DDARTLIB=dartvm3.0.3_android_arm64
+python blutter.py path\to\lib\arm64-v8a build\vs --vs-sln
 ```
-Note: Dart version must be changed to current target Dart version of Flutter engine
+

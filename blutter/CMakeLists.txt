@@ -55,6 +55,8 @@ if (MSVC)
 	if (CMAKE_GENERATOR MATCHES "Visual Studio")
 		# use SEMIDBG for enabling ASSERT macro while linking against release build of Dart VM
 		set(cc_opts /GR- /MD /D SEMIDBG)
+		set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${BINNAME})
+		set_target_properties(${BINNAME} PROPERTIES VS_DEBUGGER_COMMAND_ARGUMENTS "${DBG_CMD}")
 	else()
 		# assume Ninja
 		set(cc_opts /Oy /GR- /sdl- /Oi /GL /Gy /Zc:wchar_t /Zc:inline)
@@ -73,7 +75,17 @@ else()
 endif()
 
 get_filename_component(FRIDA_TEMPLATE_DIR "${PROJECT_SOURCE_DIR}/../scripts/" ABSOLUTE)
-target_compile_definitions(${BINNAME} PRIVATE NDEBUG FRIDA_TEMPLATE_DIR="${FRIDA_TEMPLATE_DIR}")
+set(defines NDEBUG FRIDA_TEMPLATE_DIR="${FRIDA_TEMPLATE_DIR}")
+if (OLD_MAP_SET_NAME)
+	set(defines ${defines} OLD_MAP_SET_NAME)
+endif()
+if (HAS_SHARED_CLASS_TABLE)
+	set(defines ${defines} HAS_SHARED_CLASS_TABLE)
+endif()
+if (HAS_TYPE_REF)
+	set(defines ${defines} HAS_TYPE_REF)
+endif()
+target_compile_definitions(${BINNAME} PRIVATE ${defines})
 
 target_compile_options(${BINNAME} PRIVATE ${cc_opts})
 

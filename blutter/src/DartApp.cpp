@@ -154,14 +154,16 @@ void DartApp::LoadInfo()
 {
 	auto ig = dart::Isolate::Current()->group();
 
-	loadFromClassTable(ig->class_table());
+	loadFromClassTable(ig);
 
 	auto store = ig->object_store();
 
 	// load pre-defined stub
 	loadStubs(store);
 
-	loadFromInstructions(store);
+	// getting hidden functions from InstructionsTable are not compatible against old Dart version
+	// find all Code object in heap is a work around for getting all functions
+	findFunctionInHeap();
 
 	finalizeFunctionsInfo();
 
@@ -173,8 +175,9 @@ void DartApp::LoadInfo()
 	loadFromObjectPool();
 }
 
-void DartApp::loadFromClassTable(dart::ClassTable* table)
+void DartApp::loadFromClassTable(dart::IsolateGroup* ig)
 {
+	auto table = ig->class_table();
 	const auto num_cids = table->NumCids();
 	const auto num_top_cids = table->NumTopLevelCids();
 	classes.resize(num_cids);
@@ -221,7 +224,11 @@ void DartApp::loadFromClassTable(dart::ClassTable* table)
 			}
 		}
 
+#ifdef HAS_SHARED_CLASS_TABLE
+		classes[i]->unboxed_fields_bitmap = ig->shared_class_table()->GetUnboxedFieldsMapAt(i);
+#else
 		classes[i]->unboxed_fields_bitmap = table->GetUnboxedFieldsMapAt(i);
+#endif
 	}
 
 	// post process of classes
@@ -331,131 +338,139 @@ void DartApp::loadStubs(dart::ObjectStore* store)
 #undef DO
 }
 
-void DartApp::loadFromInstructions(dart::ObjectStore* store)
+class HeapCodeVisitor : public dart::ObjectVisitor {
+public:
+	explicit HeapCodeVisitor(std::vector<dart::CodePtr>& codePtrs) : codePtrs(codePtrs) {}
+	virtual ~HeapCodeVisitor() {}
+
+	// Invoked for each object.
+	virtual void VisitObject(dart::ObjectPtr obj) {
+		if (obj->IsCode())
+			codePtrs.push_back(dart::Code::RawCast(obj));
+	}
+
+private:
+	std::vector<dart::CodePtr>& codePtrs;
+};
+
+void DartApp::findFunctionInHeap()
 {
+	std::vector<dart::CodePtr> codePtrs;
+	dart::HeapIterationScope heap_iteration_scope(dart::Thread::Current());
+	HeapCodeVisitor visitor(codePtrs);
+	heap_iteration_scope.IterateOldObjects(&visitor);
+
 	auto zone = dart::Thread::Current()->zone();
 	auto& code = dart::Code::Handle(zone);
 	auto& obj = dart::Object::Handle(zone);
 
-	// find other functions from instruction tables
-	auto tables = store->instructions_tables().untag();
-	const auto tables_length = dart::Smi::Value(tables->length());
-	for (intptr_t i = 0; i < tables_length; i++) {
-		const auto table = static_cast<dart::InstructionsTablePtr>(tables->data().untag()->element(i));
-		const auto code_objects = table.untag()->code_objects().untag();
-		const auto code_objects_length = dart::Smi::Value(code_objects->length());
-		for (intptr_t j = 0; j < code_objects_length; j++) {
-			const auto obj_ptr = code_objects->element(j);
-			const auto code_ptr = dart::Code::RawCast(obj_ptr);
+	for (dart::CodePtr code_ptr : codePtrs) {
+		code = code_ptr;
+		const auto entry_point = code.EntryPoint();
+		const auto ep_offset = entry_point - base();
 
-			code = code_ptr;
-			const auto entry_point = code.EntryPoint();
-			const auto ep_offset = entry_point - base();
-
-			auto owner = code.owner();
-			if ((intptr_t)owner == (intptr_t)dart::Object::null()) {
-				assert(code.IsStubCode());
-				if (!stubs.contains(ep_offset)) {
-					//std::cout << std::format("unknown stub at: {:#x}, {}, size: {}\n", ep_offset, code.ToCString(), code.Size());
-					auto stub_size = code.Size();
-					DartStub* candidateStub = nullptr;
-					std::vector<DartStub*> candidateStubs;
-					for (auto const& [stubEp, stub] : stubs) {
-						if (stub->kind < DartStub::SharedStub && stub->Size() == (int64_t)stub_size) {
-							if (memcmp((void*)stub->MemAddress(), (void*)entry_point, stub_size) == 0) {
-								// exact match
-								candidateStub = stub;
-								break;
-							}
-							candidateStubs.push_back(stub);
+		auto owner = code.owner();
+		if ((intptr_t)owner == (intptr_t)dart::Object::null()) {
+			assert(code.IsStubCode());
+			if (!stubs.contains(ep_offset)) {
+				//std::cout << std::format("unknown stub at: {:#x}, {}, size: {}\n", ep_offset, code.ToCString(), code.Size());
+				auto stub_size = code.Size();
+				DartStub* candidateStub = nullptr;
+				std::vector<DartStub*> candidateStubs;
+				for (auto const& [stubEp, stub] : stubs) {
+					if (stub->kind < DartStub::SharedStub && stub->Size() == (int64_t)stub_size) {
+						if (memcmp((void*)stub->MemAddress(), (void*)entry_point, stub_size) == 0) {
+							// exact match
+							candidateStub = stub;
+							break;
 						}
+						candidateStubs.push_back(stub);
 					}
-					if (candidateStub == nullptr) {
-						RELEASE_ASSERT(!candidateStubs.empty());
-						if (candidateStubs.size() == 1) {
-							candidateStub = candidateStubs[0];
-						}
-						else {
-							uint32_t maxMatch = 0;
-							for (auto stub : candidateStubs) {
-								auto tmpCode = (uint8_t*)stub->MemAddress();
-								uint32_t cnt = 0;
-								for (size_t i = 0; i < stub_size; i++) {
-									if (((uint8_t*)entry_point)[i] == tmpCode[i])
-										cnt++;
-								}
-								if (cnt > maxMatch) {
-									candidateStub = stub;
-									maxMatch = cnt;
-								}
-							}
-						}
-					}
-					//std::cout << std::format("unknown stub at: {:#x}, map to {}\n", ep_offset, candidateStub->Name());
-					ASSERT(candidateStub);
-					stubs[ep_offset] = new DartStub(code_ptr, candidateStub->kind, ep_offset, stub_size, candidateStub->Name());
 				}
-				continue;
-			}
-
-			obj = owner;
-			if (obj.IsClass()) {
-				// stub of user class
-				if (stubs.contains(ep_offset)) {
-					throw std::runtime_error("not allocate stub for user class");
-				}
-				const auto cid = (uint32_t)dart::Class::Cast(obj).id();
-				auto astub = new DartAllocateStub(code_ptr, ep_offset, code.Size(), cid, classes[cid]->name);
-				stubs[ep_offset] = astub;
-			}
-			else if (obj.IsAbstractType()) {
-				// Type test stub (seen use case: cast with "as" - xx as String)
-				// this MUST be kTypeCid
-				if (!obj.IsType())
-					throw std::runtime_error("TestType is not Type");
-				if (stubs.contains(ep_offset))
-					throw std::runtime_error("duplitcate stub entry point");
-				auto dartType = typeDb->FindOrAdd(dart::Type::Cast(obj).ptr());
-				auto tstub = new DartTypeStub(code_ptr, ep_offset, code.Size(), dart::Type::Cast(obj).ptr(), dartType->ToString());
-				stubs[ep_offset] = tstub;
-			}
-			else if (obj.IsFunction()) {
-				if (!code.is_optimized())
-					throw std::runtime_error("function code is not optimized");
-				// functions might not be in from Libraries
-				// they might be closure, indirect call, ... (know only closure usage)
-				if (!functions.contains(ep_offset)) {
-					// find its class or library, then add it
-					const auto& func = dart::Function::Cast(obj);
-					const auto cls_ptr = func.Owner();
-					const auto cid = cls_ptr.untag()->id();
-					DartClass* cls;
-					if (dart::ClassTable::IsTopLevelCid(cid)) {
-						const auto idx = dart::ClassTable::IndexFromTopLevelCid(cid);
-						cls = topClasses[idx];
-						if (cls == NULL) {
-							// new library
-							const auto& clsHandle = dart::Class::Handle(cls_ptr);
-							const auto& library = dart::Library::Handle(clsHandle.library());
-							cls = addLibrary(library)->topClass;
-						}
+				if (candidateStub == nullptr) {
+					RELEASE_ASSERT(!candidateStubs.empty());
+					if (candidateStubs.size() == 1) {
+						candidateStub = candidateStubs[0];
 					}
 					else {
-						cls = classes[cid];
-						if (cls == NULL) {
-							auto msg = std::format("found invalid class id: {}", cid);
-							throw std::runtime_error(msg);
+						uint32_t maxMatch = 0;
+						for (auto stub : candidateStubs) {
+							auto tmpCode = (uint8_t*)stub->MemAddress();
+							uint32_t cnt = 0;
+							for (size_t i = 0; i < stub_size; i++) {
+								if (((uint8_t*)entry_point)[i] == tmpCode[i])
+									cnt++;
+							}
+							if (cnt > maxMatch) {
+								candidateStub = stub;
+								maxMatch = cnt;
+							}
 						}
 					}
-					auto dartFn = cls->AddFunction(func.ptr());
-					//std::cout << std::format("missing function at: {:#x}, {}\n", ep_offset, dartFn->fullName());
-					functions[dartFn->Address()] = dartFn;
 				}
+				//std::cout << std::format("unknown stub at: {:#x}, map to {}\n", ep_offset, candidateStub->Name());
+				ASSERT(candidateStub);
+				stubs[ep_offset] = new DartStub(code_ptr, candidateStub->kind, ep_offset, stub_size, candidateStub->Name());
 			}
-			else {
-				auto msg = std::format("unknown code at: {:#x}, {}\n", ep_offset, obj.ToCString());
-				throw std::runtime_error(msg);
+			continue;
+		}
+
+		obj = owner;
+		if (obj.IsClass()) {
+			// stub of user class
+			if (stubs.contains(ep_offset)) {
+				throw std::runtime_error("not allocate stub for user class");
 			}
+			const auto cid = (uint32_t)dart::Class::Cast(obj).id();
+			auto astub = new DartAllocateStub(code_ptr, ep_offset, code.Size(), cid, classes[cid]->name);
+			stubs[ep_offset] = astub;
+		}
+		else if (obj.IsAbstractType()) {
+			// Type test stub (seen use case: cast with "as" - xx as String)
+			// this MUST be kTypeCid
+			if (!obj.IsType())
+				throw std::runtime_error("TestType is not Type");
+			if (stubs.contains(ep_offset))
+				throw std::runtime_error("duplitcate stub entry point");
+			auto dartType = typeDb->FindOrAdd(dart::Type::Cast(obj).ptr());
+			auto tstub = new DartTypeStub(code_ptr, ep_offset, code.Size(), dart::Type::Cast(obj).ptr(), dartType->ToString());
+			stubs[ep_offset] = tstub;
+		}
+		else if (obj.IsFunction()) {
+			ASSERT(code.is_optimized());
+			// functions might not be in from Libraries
+			// they might be closure, indirect call, ... (know only closure usage)
+			if (!functions.contains(ep_offset)) {
+				// find its class or library, then add it
+				const auto& func = dart::Function::Cast(obj);
+				const auto cls_ptr = func.Owner();
+				const auto cid = cls_ptr.untag()->id();
+				DartClass* cls;
+				if (dart::ClassTable::IsTopLevelCid(cid)) {
+					const auto idx = dart::ClassTable::IndexFromTopLevelCid(cid);
+					cls = topClasses[idx];
+					if (cls == NULL) {
+						// new library
+						const auto& clsHandle = dart::Class::Handle(cls_ptr);
+						const auto& library = dart::Library::Handle(clsHandle.library());
+						cls = addLibrary(library)->topClass;
+					}
+				}
+				else {
+					cls = classes[cid];
+					if (cls == NULL) {
+						auto msg = std::format("found invalid class id: {}", cid);
+						throw std::runtime_error(msg);
+					}
+				}
+				auto dartFn = cls->AddFunction(func.ptr());
+				//std::cout << std::format("missing function at: {:#x}, {}\n", ep_offset, dartFn->fullName());
+				functions[dartFn->Address()] = dartFn;
+			}
+		}
+		else {
+			auto msg = std::format("unknown code at: {:#x}, {}\n", ep_offset, obj.ToCString());
+			throw std::runtime_error(msg);
 		}
 	}
 }
@@ -501,7 +516,7 @@ void DartApp::walkObject(dart::Object& obj)
 				}
 			}
 		}
-		else if (obj.IsMap()) {
+		else if (cid == dart::kConstMapCid || cid == dart::kMapCid) {
 			auto& map = dart::Map::Cast(obj);
 			dart::Map::Iterator iter(map);
 			auto& obj2 = dart::Object::Handle();
@@ -512,7 +527,7 @@ void DartApp::walkObject(dart::Object& obj)
 				walkObject(obj2);
 			}
 		}
-		else if (obj.IsSet()) {
+		else if (cid == dart::kConstSetCid || cid == dart::kSetCid) {
 			auto& set = dart::Set::Cast(obj);
 			dart::Set::Iterator iter(set);
 			auto& obj2 = dart::Object::Handle();
