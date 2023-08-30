@@ -395,9 +395,9 @@ void DartDumper::DumpCode(const char* out_dir)
 						}
 
 						if (extra.empty())
-							of << std::format("    // {:#x}: {}\n", asmText.addr, asmText.text);
+							of << std::format("    // {:#x}: {}\n", asmText.addr, &asmText.text[0]);
 						else
-							of << std::format("    // {:#x}: {}  ; {}\n", asmText.addr, asmText.text, extra);
+							of << std::format("    // {:#x}: {}  ; {}\n", asmText.addr, &asmText.text[0], extra);
 					}
 				}
 
