@@ -731,13 +731,15 @@ std::string DartDumper::dumpInstanceFields(dart::Object& obj, DartClass& dartCls
 		else if (offset != dartCls.TypeArgumentsOffset()) {
 			// compressed object ptr
 			auto p = reinterpret_cast<dart::CompressedObjectPtr*>(ptr + offset);
-			auto objPtr2 = p->Decompress(app.heap_base());
-			if (objPtr2.GetClassId() != dart::kNullCid) {
-				obj = objPtr2;
-				if (simpleForm || objPtr2.GetClassId() < dart::kNumPredefinedCids)
-					txtField = std::format("off_{:x}: {}", offset, ObjectToString(obj, simpleForm, nestedObj, depth));
-				else
-					txtField = std::format("off_{:x}_{}", offset, ObjectToString(obj, simpleForm, nestedObj, depth));
+			if (*p != dart::CompressedObjectPtr(0)) {
+				auto objPtr2 = p->Decompress(app.heap_base());
+				if (objPtr2 != nullptr && objPtr2.GetClassId() != dart::kNullCid) {
+					obj = objPtr2;
+					if (simpleForm || objPtr2.GetClassId() < dart::kNumPredefinedCids)
+						txtField = std::format("off_{:x}: {}", offset, ObjectToString(obj, simpleForm, nestedObj, depth));
+					else
+						txtField = std::format("off_{:x}_{}", offset, ObjectToString(obj, simpleForm, nestedObj, depth));
+				}
 			}
 		}
 		offset += dart::kCompressedWordSize;
