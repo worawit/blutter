@@ -3,7 +3,7 @@
 // forward declaration
 class DartClass;
 class DartType;
-#ifdef HAS_SHARED_CLASS_TABLE
+#ifdef HAS_TYPE_REF
 class DartTypeRef;
 #else
 //class DartRecordType;
@@ -17,7 +17,7 @@ public:
 	enum Kind : uint8_t {
 		TypeParam = 1,
 		Type,
-#ifdef HAS_SHARED_CLASS_TABLE
+#ifdef HAS_TYPE_REF
 		TypeRef,  // it is ref to Type, use it when self reference
 #else
 		RecordType, // TODO:
@@ -39,7 +39,7 @@ public:
 		ASSERT(kind == Type);
 		return reinterpret_cast<DartType*>(this);
 	}
-#ifdef HAS_SHARED_CLASS_TABLE
+#ifdef HAS_TYPE_REF
 	DartTypeRef* AsTypeRef() {
 		ASSERT(kind == TypeRef);
 		return reinterpret_cast<DartTypeRef*>(this);
@@ -98,7 +98,7 @@ protected:
 	friend class DartApp;
 };
 
-#ifdef HAS_SHARED_CLASS_TABLE
+#ifdef HAS_TYPE_REF
 class DartTypeRef : public DartAbstractType
 {
 public:

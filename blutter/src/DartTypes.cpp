@@ -45,7 +45,7 @@ std::string DartType::ToString(bool showTypeArgs) const
 	return txt;
 }
 
-#ifdef HAS_SHARED_CLASS_TABLE
+#ifdef HAS_TYPE_REF
 std::string DartTypeRef::ToString() const
 {
 	return type.ToString(false);
@@ -65,7 +65,7 @@ std::string DartTypeParameter::ToString() const
 	if (bound->IsType()) {
 		auto& cls = bound->AsType()->Class();
 		if (cls.Id() != dart::kInstanceCid) {
-#ifdef HAS_SHARED_CLASS_TABLE
+#ifdef HAS_TYPE_REF
 			txt += " bound " + bound->ToString();
 #else
 			txt += " bound " + bound->AsType()->ToString(false);
@@ -235,7 +235,7 @@ DartAbstractType* DartTypeDb::FindOrAdd(dart::AbstractTypePtr abTypePtr)
 	switch (abTypePtr.GetClassId()) {
 	case dart::kTypeCid:
 		return FindOrAdd(dart::Type::RawCast(abTypePtr));
-#ifdef HAS_SHARED_CLASS_TABLE
+#ifdef HAS_TYPE_REF
 	case dart::kTypeRefCid: {
 		//auto& typeRef = dart::TypeRef::Handle(dart::TypeRef::RawCast(abTypePtr));
 		//auto typePtr = typeRef.type();
