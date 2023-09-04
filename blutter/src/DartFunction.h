@@ -15,7 +15,9 @@ public:
 		GETTER,
 		SETTER,
 	};
-	DartFunction(DartClass& cls, dart::FunctionPtr ptr);
+	explicit DartFunction(DartClass& cls, const dart::FunctionPtr ptr);
+	// for creating naked code (only used for obfuscated app)
+	explicit DartFunction(DartClass& cls, const dart::Code& code);
 	DartFunction() = delete;
 	DartFunction(const DartFunction&) = delete;
 	DartFunction(DartFunction&&) = delete;

@@ -13,7 +13,9 @@ public:
 		ABSTRACT, // abstract class
 		ENUM,     // enum (parent class is _Enum)
 	};
-	DartClass(const DartLibrary& lib, const dart::Class& cls);
+	explicit DartClass(const DartLibrary& lib, const dart::Class& cls);
+	// for creating dummy class (only used for obfuscated app)
+	explicit DartClass(const DartLibrary& lib);
 	DartClass() = delete;
 	DartClass(const DartClass&) = delete;
 	DartClass(DartClass&&) = delete;
@@ -21,6 +23,7 @@ public:
 	~DartClass();
 
 	DartFunction* AddFunction(const dart::ObjectPtr funcPtr);
+	DartFunction* AddFunction(const dart::Code& code);
 	DartField* AddField(const dart::ObjectPtr fieldPtr);
 	DartField* AddField(intptr_t offset, DartAbstractType* type, bool nativeNumber = false);
 	DartField* FindField(intptr_t offset);

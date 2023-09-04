@@ -130,6 +130,13 @@ DartClass::DartClass(const DartLibrary& lib_, const dart::Class& cls) :
 	//}
 }
 
+DartClass::DartClass(const DartLibrary& lib)
+	: lib(lib), unboxed_fields_bitmap(0), id(0), superCls(nullptr), ptr(dart::Class::null()), declarationType(nullptr),
+	name(""), type(CLASS), num_type_arguments(0), num_type_parameters(0), mixin(nullptr),
+	type_argument_offset(0), size(0), is_const_constructor(false), is_transformed_mixin(false)
+{
+}
+
 DartClass::~DartClass()
 {
 	for (auto field : fields) {
@@ -143,6 +150,13 @@ DartClass::~DartClass()
 DartFunction* DartClass::AddFunction(const dart::ObjectPtr funcPtr)
 {
 	auto dartFn = new DartFunction(*this, dart::Function::RawCast(funcPtr));
+	functions.push_back(dartFn);
+	return dartFn;
+}
+
+DartFunction* DartClass::AddFunction(const dart::Code& code)
+{
+	auto dartFn = new DartFunction(*this, code);
 	functions.push_back(dartFn);
 	return dartFn;
 }

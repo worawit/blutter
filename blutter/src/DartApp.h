@@ -33,6 +33,7 @@ private:
 	DartLibrary* addLibrary(const dart::Library& library);
 	void loadFromClassTable(dart::IsolateGroup* ig);
 	void loadStubs(dart::ObjectStore* store);
+	DartFunction* addFunctionNoCheck(const dart::Function& func);
 	void addFunction(uintptr_t ep_addr, const dart::Function& func);
 	void findFunctionInHeap();
 	void finalizeFunctionsInfo();

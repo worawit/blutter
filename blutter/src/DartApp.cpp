@@ -338,32 +338,36 @@ void DartApp::loadStubs(dart::ObjectStore* store)
 #undef DO
 }
 
+DartFunction* DartApp::addFunctionNoCheck(const dart::Function& func)
+{
+	// find its class or library, then add it
+	const auto cls_ptr = func.Owner();
+	const auto cid = cls_ptr.untag()->id();
+	DartClass* cls;
+	if (dart::ClassTable::IsTopLevelCid(cid)) {
+		const auto idx = dart::ClassTable::IndexFromTopLevelCid(cid);
+		cls = topClasses[idx];
+		if (cls == NULL) {
+			// new library
+			const auto& clsHandle = dart::Class::Handle(cls_ptr);
+			const auto& library = dart::Library::Handle(clsHandle.library());
+			cls = addLibrary(library)->topClass;
+		}
+	}
+	else {
+		cls = classes[cid];
+		if (cls == NULL) {
+			auto msg = std::format("found invalid class id: {}", cid);
+			throw std::runtime_error(msg);
+		}
+	}
+	return cls->AddFunction(func.ptr());
+}
+
 void DartApp::addFunction(uintptr_t ep_addr, const dart::Function& func)
 {
 	if (!functions.contains(ep_addr)) {
-		// find its class or library, then add it
-		const auto cls_ptr = func.Owner();
-		const auto cid = cls_ptr.untag()->id();
-		DartClass* cls;
-		if (dart::ClassTable::IsTopLevelCid(cid)) {
-			const auto idx = dart::ClassTable::IndexFromTopLevelCid(cid);
-			cls = topClasses[idx];
-			if (cls == NULL) {
-				// new library
-				const auto& clsHandle = dart::Class::Handle(cls_ptr);
-				const auto& library = dart::Library::Handle(clsHandle.library());
-				cls = addLibrary(library)->topClass;
-			}
-		}
-		else {
-			cls = classes[cid];
-			if (cls == NULL) {
-				auto msg = std::format("found invalid class id: {}", cid);
-				throw std::runtime_error(msg);
-			}
-		}
-		auto dartFn = cls->AddFunction(func.ptr());
-		//std::cout << std::format("missing function at: {:#x}, {}\n", ep_offset, dartFn->fullName());
+		auto dartFn = addFunctionNoCheck(func);
 		functions[dartFn->Address()] = dartFn;
 	}
 }
@@ -401,7 +405,7 @@ void DartApp::findFunctionInHeap()
 
 		auto owner = code.owner();
 		if ((intptr_t)owner == (intptr_t)dart::Object::null()) {
-			assert(code.IsStubCode());
+			ASSERT(code.IsStubCode());
 			if (!stubs.contains(ep_offset)) {
 				//std::cout << std::format("unknown stub at: {:#x}, {}, size: {}\n", ep_offset, code.ToCString(), code.Size());
 				auto stub_size = code.Size();
@@ -473,7 +477,17 @@ void DartApp::findFunctionInHeap()
 			addFunction(ep_offset, dart::Function::Cast(obj));
 		}
 		else if (obj.IsSmi()) {
-			std::cout << std::format("[!] TODO: SMI code at: {:#x}, {}\n", ep_offset, obj.ToCString());
+			// this case is only seen in obfuscated app
+			auto ownerClassId = code.OwnerClassId();
+			ASSERT(ownerClassId == dart::kFunctionCid);
+			if (!functions.contains(ep_offset)) {
+				// no function, can only make it into top class of native library
+				if (!nativeLib.topClass) {
+					nativeLib.topClass = new DartClass(nativeLib);
+				}
+				auto dartFn = nativeLib.topClass->AddFunction(code);
+				functions[dartFn->Address()] = dartFn;
+			}
 		}
 		else {
 			auto msg = std::format("[!] unknown code at: {:#x}, {}\n", ep_offset, obj.ToCString());
@@ -486,27 +500,65 @@ void DartApp::findFunctionInHeap()
 
 void DartApp::finalizeFunctionsInfo()
 {
-	for (auto& [ep_addr, fnBase] : functions) {
+	auto& parentFn = dart::Function::Handle();
+	std::unordered_map<uint64_t, DartFunction*> pending_functions;
+	for (auto& [_, fnBase] : functions) {
 		if (fnBase->IsStub())
 			continue;
 
 		auto dartFn = fnBase->AsFunction();
 		// update parent pointer
 		if (dartFn->parent) {
-			const auto ep_addr = (intptr_t)dartFn->parent;
+			parentFn = dart::FunctionPtr((intptr_t)dartFn->parent);
+			const auto ep_addr = parentFn.entry_point() - base();
 			if (stubs.contains(ep_addr)) {
 				dartFn->parent = nullptr;
 			}
-			else if (functions.contains((intptr_t)dartFn->parent)) {
-				dartFn->parent = functions[(intptr_t)dartFn->parent];
+			else if (functions.contains(ep_addr)) {
+				dartFn->parent = functions[ep_addr];
+			}
+			else if (pending_functions.contains(ep_addr)) {
+				dartFn->parent = pending_functions[ep_addr];
 			}
 			else {
-				std::cout << std::format("[!] Cannot find parent function of {} ({:#x}), at {:#x}\n", dartFn->Name(), dartFn->Address(), (intptr_t)dartFn->parent);
-				dartFn->parent = nullptr;
+				auto newDartFn = addFunctionNoCheck(parentFn);
+				pending_functions[ep_addr] = newDartFn;
+				dartFn->parent = newDartFn;
 			}
 		}
 
 		// TODO: handle function result type and paramters type
+	}
+
+	std::unordered_map<uint64_t, DartFunction*> new_functions;
+	while (!pending_functions.empty()) {
+		for (auto& [dartFn_ep, dartFn] : pending_functions) {
+			if (dartFn->parent) {
+				parentFn = dart::FunctionPtr((intptr_t)dartFn->parent);
+				const auto ep_addr = parentFn.entry_point() - base();
+				if (stubs.contains(ep_addr)) {
+					dartFn->parent = nullptr;
+				}
+				else if (functions.contains(ep_addr)) {
+					dartFn->parent = functions[ep_addr];
+				}
+				else if (pending_functions.contains(ep_addr)) {
+					dartFn->parent = pending_functions[ep_addr];
+				}
+				else if (new_functions.contains(ep_addr)) {
+					dartFn->parent = new_functions[ep_addr];
+				}
+				else {
+					auto newDartFn = addFunctionNoCheck(parentFn);
+					new_functions[ep_addr] = newDartFn;
+					dartFn->parent = newDartFn;
+				}
+			}
+			functions[dartFn_ep] = dartFn;
+		}
+		pending_functions.clear();
+		pending_functions = std::move(new_functions);
+		new_functions.clear();
 	}
 }
 
