@@ -312,7 +312,7 @@ static cs_insn* processCallInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
 	if (insn.id() == ARM64_INS_BL) {
 		if (insn.ops[0].type == ARM64_OP_IMM) {
 			const auto target = insn.ops[0].imm;
-			fnInfo->AddInstruction(std::make_unique<CallInstr>(insn.ptr(), *fnInfo->app.GetFunction(target)));
+			fnInfo->AddInstruction(std::make_unique<CallInstr>(insn.ptr(), fnInfo->app.GetFunction(target)));
 			return insn.ptr();
 		}
 		// should indirect call handle here
@@ -322,7 +322,7 @@ static cs_insn* processCallInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
 		const auto& dartFn = fnInfo->dartFn;
 		const auto target = insn.ops[0].imm;
 		if (target < dartFn.Address() || target >= dartFn.AddressEnd()) {
-			fnInfo->AddInstruction(std::make_unique<CallInstr>(insn.ptr(), *fnInfo->app.GetFunction(target)));
+			fnInfo->AddInstruction(std::make_unique<CallInstr>(insn.ptr(), fnInfo->app.GetFunction(target)));
 			return insn.ptr();
 		}
 	}

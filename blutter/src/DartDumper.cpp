@@ -383,12 +383,14 @@ void DartDumper::DumpCode(const char* out_dir)
 								}
 							}
 							else if (asmText.insn->Kind() == ILInstr::Call) {
-								auto& fn = reinterpret_cast<CallInstr*>(asmText.insn)->GetFunction();
-								extra = fn.FullName();
-								auto retCid = fn.ReturnType();
-								if (retCid != dart::kIllegalCid) {
-									auto retCls = app.classes.at(retCid);
-									extra += std::format(" -> {} (size={:#x})", retCls->FullName(), retCls->Size());
+								auto* fn = reinterpret_cast<CallInstr*>(asmText.insn)->GetFunction();
+								if (fn) {
+									extra = fn->FullName();
+									auto retCid = fn->ReturnType();
+									if (retCid != dart::kIllegalCid) {
+										auto retCls = app.classes.at(retCid);
+										extra += std::format(" -> {} (size={:#x})", retCls->FullName(), retCls->Size());
+									}
 								}
 							}
 							break;
@@ -529,7 +531,10 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 	case dart::kClosureCid: {
 		// TODO: show owner
 		const auto& closure = dart::Closure::Cast(obj);
-		RELEASE_ASSERT(app.functions.contains(closure.entry_point() - app.base()));
+		if (!app.functions.contains(closure.entry_point() - app.base())) {
+			std::cout << std::format("[!] missing closure at {:#x}\n", closure.entry_point() - app.base());
+		}
+		//RELEASE_ASSERT(app.functions.contains(closure.entry_point() - app.base()));
 		return std::format("{} ({:#x})", closure.ToCString(), closure.entry_point());
 	}
 	case dart::kCodeCid: {

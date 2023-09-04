@@ -168,21 +168,21 @@ protected:
 
 class CallInstr : public ILInstr {
 public:
-	CallInstr(cs_insn* insn, DartFnBase& fnBase) : ILInstr(Call, insn), fnBase(fnBase) {}
+	CallInstr(cs_insn* insn, DartFnBase* fnBase) : ILInstr(Call, insn), fnBase(fnBase) {}
 	CallInstr() = delete;
 	CallInstr(CallInstr&&) = delete;
 	CallInstr& operator=(const CallInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{}()", fnBase.Name());
+		return std::format("{}()", fnBase->Name());
 	}
 
-	DartFnBase& GetFunction() {
+	DartFnBase* GetFunction() {
 		return fnBase;
 	}
 
 protected:
-	DartFnBase& fnBase;
+	DartFnBase* fnBase;
 };
 
 class ReturnInstr : public ILInstr {

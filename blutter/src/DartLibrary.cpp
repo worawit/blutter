@@ -99,11 +99,15 @@ std::string DartLibrary::CreatePath(const char* base_dir)
 	else if (url.starts_with("file:///")) {
 		start_pos = url.find("/.dart_tool/") + 1;
 	}
-	else {
-		ASSERT(url.starts_with("dart:"));
+	else if (url.starts_with("dart:")) {
 		path.append("dart");
 		std::filesystem::create_directories(path);
 		return path.append("/").append(&url[5]).append(".dart");
+	}
+	else {
+		// obfuscated
+		ASSERT(url.find('/') == -1);
+		return path.append(url).append(".dart");
 	}
 	const char* lib_path = &url[start_pos]; // skip directory name
 	const char* end = strrchr(lib_path, '/');

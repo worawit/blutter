@@ -8,7 +8,7 @@ Also the application is currently work only against recent Dart versions.
 ## Environment Setup
 This application uses C++20 Formatting library. It requires very recent C++ compiler such as g++>=13, Clang>=15.
 
-I recommend using Linux OS (only tested on Deiban sid) because it is easy to setup.
+I recommend using Linux OS (only tested on Deiban sid/trixie) because it is easy to setup.
 
 ### Debian Unstable (gcc 13)
 - Install build tools and depenencies
@@ -42,6 +42,11 @@ The blutter.py will automatically detect the Dart version from the flutter engin
 
 If the blutter executable for required Dart version does not exists, the script will automatically checkout Dart source code and compiling it.
 
+## Update
+You can use ```git pull``` to update and run blutter.py with ```--rebuild``` option to force rebuild the executable
+```
+python3 blutter.py path/to/app/lib/arm64-v8a out_dir --rebuild
+```
 
 ## Output files
 - **asm/\*** libapp assemblies with symbols

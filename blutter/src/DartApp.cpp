@@ -165,14 +165,14 @@ void DartApp::LoadInfo()
 	// find all Code object in heap is a work around for getting all functions
 	findFunctionInHeap();
 
+	loadFromObjectPool();
+
 	finalizeFunctionsInfo();
 
 	//auto fieldTable = isolate->field_table(); //contains only sentinel, null, false, 0
 
 	// there are instruction tables in vm isolate but their code are not called from Dart code (can be skipped)
 	//dart::Dart::vm_isolate_group();
-
-	loadFromObjectPool();
 }
 
 void DartApp::loadFromClassTable(dart::IsolateGroup* ig)
@@ -338,6 +338,36 @@ void DartApp::loadStubs(dart::ObjectStore* store)
 #undef DO
 }
 
+void DartApp::addFunction(uintptr_t ep_addr, const dart::Function& func)
+{
+	if (!functions.contains(ep_addr)) {
+		// find its class or library, then add it
+		const auto cls_ptr = func.Owner();
+		const auto cid = cls_ptr.untag()->id();
+		DartClass* cls;
+		if (dart::ClassTable::IsTopLevelCid(cid)) {
+			const auto idx = dart::ClassTable::IndexFromTopLevelCid(cid);
+			cls = topClasses[idx];
+			if (cls == NULL) {
+				// new library
+				const auto& clsHandle = dart::Class::Handle(cls_ptr);
+				const auto& library = dart::Library::Handle(clsHandle.library());
+				cls = addLibrary(library)->topClass;
+			}
+		}
+		else {
+			cls = classes[cid];
+			if (cls == NULL) {
+				auto msg = std::format("found invalid class id: {}", cid);
+				throw std::runtime_error(msg);
+			}
+		}
+		auto dartFn = cls->AddFunction(func.ptr());
+		//std::cout << std::format("missing function at: {:#x}, {}\n", ep_offset, dartFn->fullName());
+		functions[dartFn->Address()] = dartFn;
+	}
+}
+
 class HeapCodeVisitor : public dart::ObjectVisitor {
 public:
 	explicit HeapCodeVisitor(std::vector<dart::CodePtr>& codePtrs) : codePtrs(codePtrs) {}
@@ -440,37 +470,16 @@ void DartApp::findFunctionInHeap()
 			ASSERT(code.is_optimized());
 			// functions might not be in from Libraries
 			// they might be closure, indirect call, ... (know only closure usage)
-			if (!functions.contains(ep_offset)) {
-				// find its class or library, then add it
-				const auto& func = dart::Function::Cast(obj);
-				const auto cls_ptr = func.Owner();
-				const auto cid = cls_ptr.untag()->id();
-				DartClass* cls;
-				if (dart::ClassTable::IsTopLevelCid(cid)) {
-					const auto idx = dart::ClassTable::IndexFromTopLevelCid(cid);
-					cls = topClasses[idx];
-					if (cls == NULL) {
-						// new library
-						const auto& clsHandle = dart::Class::Handle(cls_ptr);
-						const auto& library = dart::Library::Handle(clsHandle.library());
-						cls = addLibrary(library)->topClass;
-					}
-				}
-				else {
-					cls = classes[cid];
-					if (cls == NULL) {
-						auto msg = std::format("found invalid class id: {}", cid);
-						throw std::runtime_error(msg);
-					}
-				}
-				auto dartFn = cls->AddFunction(func.ptr());
-				//std::cout << std::format("missing function at: {:#x}, {}\n", ep_offset, dartFn->fullName());
-				functions[dartFn->Address()] = dartFn;
-			}
+			addFunction(ep_offset, dart::Function::Cast(obj));
+		}
+		else if (obj.IsSmi()) {
+			std::cout << std::format("[!] TODO: SMI code at: {:#x}, {}\n", ep_offset, obj.ToCString());
 		}
 		else {
-			auto msg = std::format("unknown code at: {:#x}, {}\n", ep_offset, obj.ToCString());
-			throw std::runtime_error(msg);
+			auto msg = std::format("[!] unknown code at: {:#x}, {}\n", ep_offset, obj.ToCString());
+			std::cout << msg;
+			std::cout << "  !!! Unhandle case. Please report with your APK\n";
+			//throw std::runtime_error(msg);
 		}
 	}
 }
@@ -488,8 +497,12 @@ void DartApp::finalizeFunctionsInfo()
 			if (stubs.contains(ep_addr)) {
 				dartFn->parent = nullptr;
 			}
+			else if (functions.contains((intptr_t)dartFn->parent)) {
+				dartFn->parent = functions[(intptr_t)dartFn->parent];
+			}
 			else {
-				dartFn->parent = functions.at((intptr_t)dartFn->parent);
+				std::cout << std::format("[!] Cannot find parent function of {} ({:#x}), at {:#x}\n", dartFn->Name(), dartFn->Address(), (intptr_t)dartFn->parent);
+				dartFn->parent = nullptr;
 			}
 		}
 
@@ -547,6 +560,17 @@ void DartApp::walkObject(dart::Object& obj)
 		}
 		else if (obj.IsFunctionType()) {
 			typeDb->FindOrAdd(dart::FunctionType::RawCast(obj.ptr()));
+		}
+		else if (obj.IsFunction()) {
+			const auto& func = dart::Function::Cast(obj);
+			const auto ep_addr = func.entry_point() - base();
+			addFunction(ep_addr, func);
+		}
+		else if (obj.IsClosure()) {
+			const auto& closure = dart::Closure::Cast(obj);
+			const auto ep_addr = closure.entry_point() - base();
+			const auto& func = dart::Function::Handle(closure.function());
+			addFunction(ep_addr, func);
 		}
 		return;
 	}

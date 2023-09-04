@@ -21,8 +21,8 @@ DartFunction::DartFunction(DartClass& cls_, dart::FunctionPtr ptr_) : DartFnBase
 	name = func.UserVisibleNameCString();
 
 	is_native = func.is_native();
-	//is_closure = name == "<anonymous closure>"; //func.IsClosureFunction();
-	is_closure = func.IsNonImplicitClosureFunction();
+	//is_closure = name == "<anonymous closure>";
+	is_closure = func.IsClosureFunction(); //func.IsNonImplicitClosureFunction();
 	//ASSERT(is_closure == (name == "<anonymous closure>"));
 	is_ffi = func.IsFfiTrampoline();
 	if (!is_ffi) {
@@ -64,35 +64,45 @@ DartFunction::DartFunction(DartClass& cls_, dart::FunctionPtr ptr_) : DartFnBase
 		//}
 	}
 
+	// the generated code can be checked from Assembler::MonomorphicCheckedEntryAOT()
+	// Code.EntryPoint() in obfuscated app might be pointed at start of snapshot (wrong)
+	const auto ep = func.entry_point() - lib_base;
+	const auto& code = dart::Code::Handle(zone, func.CurrentCode());
+	payload_addr = code.PayloadStart();
+	if (payload_addr > 0)
+		payload_addr -= lib_base;
+	size = code.Size();
+	ep_addr = code.EntryPoint() - lib_base;
+	morphic_addr = code.MonomorphicEntryPoint() - lib_base;
+	if (ep != ep_addr) {
+		ep_addr = ep;
+		//std::cout << std::format("Fn: {}, payload: {:#x}, ep_addr: {:#x}, ep: {:#x}\n", name.c_str(), payload_addr, ep_addr, ep);
+	}
+
+	//if (ep_addr != payload_addr) {
+	//	std::cout << std::format("Fn: {}, payload: {:#x}, morphic: {:#x}, ep: {:#x}\n", name.c_str(), payload_addr, morphic_addr, ep_addr);
+	//}
+
 	// closure parent (what function use this closure)
 	if (is_closure) {
-		auto parentPtr = func.parent_function();
-		ASSERT((intptr_t)parentPtr != (intptr_t)dart::Function::null());
 		is_static = func.is_static();
-		//auto outmost_parent = func.GetOutermostFunction();
-		auto& parentFn = dart::Function::Handle(zone, parentPtr);
-		// Now, the parent function might be missing.
-		//   store parent as entry point first. it will be changed to pointer later.
-		parent = (DartFunction*)(parentFn.entry_point() - lib_base);
+		auto parentPtr = func.parent_function();
+		if ((intptr_t)parentPtr != (intptr_t)dart::Function::null()) {
+			//auto outmost_parent = func.GetOutermostFunction();
+			auto& parentFn = dart::Function::Handle(zone, parentPtr);
+			// Now, the parent function might be missing.
+			//   store parent as entry point first. it will be changed to pointer later.
+			parent = (DartFunction*)(parentFn.entry_point() - lib_base);
+		}
+		else {
+			//std::cout << std::format("[?] closure {} ({:#x}) has null parent\n", name, ep_addr);
+		}
 	}
 
 	// Note: Signature is dropped in most function
 	//const auto& sig = dart::FunctionType::Handle(zone, func.signature());
 	//if (!sig.IsNull()) {
 	//	// TODO: extract info
-	//}
-
-	// the generated code can be checked from Assembler::MonomorphicCheckedEntryAOT()
-	const auto ep = func.entry_point() - lib_base;
-	const auto& code = dart::Code::Handle(zone, func.CurrentCode());
-	payload_addr = code.PayloadStart() - lib_base;
-	size = (uint32_t)code.Size();
-	ep_addr = code.EntryPoint() - lib_base;
-	morphic_addr = code.MonomorphicEntryPoint() - lib_base;
-	ASSERT(ep == ep_addr);
-
-	//if (ep_addr != payload_addr) {
-	//	std::cout << std::format("Fn: {}, payload: {:#x}, morphic: {:#x}, ep: {:#x}\n", name.c_str(), payload_addr, morphic_addr, ep_addr);
 	//}
 
 	// TODO:

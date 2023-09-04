@@ -54,17 +54,17 @@ int main(int argc, char** argv)
 		return 0;
 	}
 	catch (args::ParseError& e) {
-		std::cerr << e.what() << std::endl;
+		std::cerr << e.what() << "\n";
 		std::cerr << parser;
 		return 1;
 	}
 	catch (args::ValidationError& e) {
-		std::cerr << e.what() << std::endl;
+		std::cerr << e.what() << "\n";
 		std::cerr << parser;
 		return 1;
 	}
 	catch (std::exception& e) {
-		printf("exception: %s", e.what());
+		std::cerr << "exception: " << e.what() << "\n";
 	}
 
 	return 0;
