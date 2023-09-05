@@ -365,6 +365,16 @@ static cs_insn* processGdtCallInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
 			cidReg = insn.ops[1].reg;
 		}
 	}
+	else if (insn.id() == ARM64_INS_ORR && insn.ops[0].reg == CSREG_DART_TMP2 && insn.ops[1].reg == ARM64_REG_XZR && insn.ops[2].type == ARM64_OP_IMM) {
+		offset = insn.ops[2].imm;
+		const auto tmpReg = insn.ops[0].reg;
+		++insn;
+
+		if (insn.id() == ARM64_INS_ADD && insn.ops[0].reg == CSREG_DART_LR) {
+			RELEASE_ASSERT(insn.ops[2].reg == tmpReg);
+			cidReg = insn.ops[1].reg;
+		}
+	}
 	else if (insn.ops[0].reg == CSREG_DART_LR && (insn.id() == ARM64_INS_ADD || insn.id() == ARM64_INS_SUB)) {
 		ASSERT(insn.ops[2].type == ARM64_OP_IMM);
 		cidReg = insn.ops[1].reg;
