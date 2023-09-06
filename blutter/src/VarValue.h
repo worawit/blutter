@@ -214,11 +214,20 @@ struct VarInstance : public VarValue {
 };
 
 struct VarType : public VarValue {
-	explicit VarType(const DartType& type) : VarValue(dart::kTypeParameterCid, true), type(type) {}
+	explicit VarType(const DartType& type) : VarValue(dart::kTypeCid, true), type(type) {}
 	virtual std::string ToString() { return type.ToString(); }
 
 	const DartType& type;
 };
+
+#ifdef HAS_RECORD_TYPE
+struct VarRecordType : public VarValue {
+	explicit VarRecordType(const DartRecordType& recordType) : VarValue(dart::kRecordTypeCid, true), recordType(recordType) {}
+	virtual std::string ToString() { return recordType.ToString(); }
+
+	const DartRecordType& recordType;
+};
+#endif
 
 struct VarTypeParameter : public VarValue {
 	explicit VarTypeParameter(const DartTypeParameter& typeParam) : VarValue(dart::kTypeParameterCid, true), typeParam(typeParam) {}

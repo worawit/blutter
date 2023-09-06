@@ -461,13 +461,20 @@ void DartApp::findFunctionInHeap()
 		}
 		else if (obj.IsAbstractType()) {
 			// Type test stub (seen use case: cast with "as" - xx as String)
-			// this MUST be kTypeCid
-			if (!obj.IsType())
+			// this MUST be kTypeCid or kRecordTypeCid (Dart >= 3.0)
+			if (!obj.IsType()) {
+#ifdef HAS_RECORD_TYPE
+				if (!obj.IsRecordType()) {
+					throw std::runtime_error("TestType is not Type or RecordType");
+				}
+#else
 				throw std::runtime_error("TestType is not Type");
+#endif
+			}
 			if (stubs.contains(ep_offset))
 				throw std::runtime_error("duplitcate stub entry point");
-			auto dartType = typeDb->FindOrAdd(dart::Type::Cast(obj).ptr());
-			auto tstub = new DartTypeStub(code_ptr, ep_offset, code.Size(), dart::Type::Cast(obj).ptr(), dartType->ToString());
+			auto dartType = typeDb->FindOrAdd(dart::AbstractType::Cast(obj).ptr());
+			auto tstub = new DartTypeStub(code_ptr, ep_offset, code.Size(), *dartType, dartType->ToString());
 			stubs[ep_offset] = tstub;
 		}
 		else if (obj.IsFunction()) {

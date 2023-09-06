@@ -3,10 +3,13 @@
 // forward declaration
 class DartClass;
 class DartType;
+// RecordType is added in Dart 3.0
+#ifdef HAS_RECORD_TYPE
+class DartRecordType;
+#endif
+// TypeRef is removed in Dart 3.1
 #ifdef HAS_TYPE_REF
 class DartTypeRef;
-#else
-//class DartRecordType;
 #endif
 class DartTypeParameter;
 class DartFunctionType;
@@ -17,10 +20,11 @@ public:
 	enum Kind : uint8_t {
 		TypeParam = 1,
 		Type,
+#ifdef HAS_RECORD_TYPE
+		RecordType,
+#endif
 #ifdef HAS_TYPE_REF
 		TypeRef,  // it is ref to Type, use it when self reference
-#else
-		RecordType, // TODO:
 #endif
 		FunctionType,
 	};
@@ -39,6 +43,12 @@ public:
 		ASSERT(kind == Type);
 		return reinterpret_cast<DartType*>(this);
 	}
+#ifdef HAS_RECORD_TYPE
+	DartRecordType* AsRecordType() {
+		ASSERT(kind == RecordType);
+		return reinterpret_cast<DartRecordType*>(this);
+	}
+#endif
 #ifdef HAS_TYPE_REF
 	DartTypeRef* AsTypeRef() {
 		ASSERT(kind == TypeRef);
@@ -97,6 +107,25 @@ protected:
 	friend class DartTypeDb;
 	friend class DartApp;
 };
+
+#ifdef HAS_RECORD_TYPE
+class DartRecordType : public DartAbstractType
+{
+public:
+	DartRecordType() = delete;
+
+	virtual std::string ToString() const;
+
+protected:
+	// incomplete initialization. we need it to prevent infinite loop when creating a new type
+	explicit DartRecordType(bool nullable, std::vector<std::string> fieldNames) : DartAbstractType(Kind::RecordType, nullable), fieldNames(std::move(fieldNames)) {}
+
+	std::vector<DartAbstractType*> fieldTypes;
+	std::vector<std::string> fieldNames;
+
+	friend class DartTypeDb;
+};
+#endif
 
 #ifdef HAS_TYPE_REF
 class DartTypeRef : public DartAbstractType
@@ -182,6 +211,9 @@ public:
 	DartType* Get(uint32_t cid);
 
 	DartType* FindOrAdd(dart::TypePtr typePtr);
+#ifdef HAS_RECORD_TYPE
+	DartRecordType* FindOrAdd(dart::RecordTypePtr recordTypePtr);
+#endif
 	DartTypeParameter* FindOrAdd(dart::TypeParameterPtr typeParamPtr);
 	DartFunctionType* FindOrAdd(dart::FunctionTypePtr fnTypePtr);
 	DartAbstractType* FindOrAdd(dart::AbstractTypePtr abTypePtr);

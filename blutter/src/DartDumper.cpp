@@ -581,11 +581,15 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		return "TypeArguments: " + app.typeDb->FindOrAdd(dart::TypeArguments::RawCast(obj.ptr()))->ToString();
 	case dart::kTypeCid:
 		return "Type: " + app.typeDb->FindOrAdd(dart::Type::RawCast(obj.ptr()))->ToString();
+#ifdef HAS_RECORD_TYPE
+	case dart::kRecordTypeCid:
+		return "RecordType: " + app.typeDb->FindOrAdd(dart::RecordType::RawCast(obj.ptr()))->ToString();
+#endif
 	case dart::kTypeParameterCid:
 		return "TypeParameter: " + app.typeDb->FindOrAdd(dart::TypeParameter::RawCast(obj.ptr()))->ToString();
 	case dart::kFunctionTypeCid:
 		return "FunctionType: " + app.typeDb->FindOrAdd(dart::FunctionType::RawCast(obj.ptr()))->ToString();
-#ifdef HAS_SHARED_CLASS_TABLE
+#ifdef HAS_TYPE_REF
 	case dart::kTypeRefCid:
 #endif
 	case dart::kTypeParametersCid:

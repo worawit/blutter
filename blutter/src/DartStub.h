@@ -3,6 +3,9 @@
 #include "DartFnBase.h"
 #include <vm/stub_code_list.h>
 
+// forward declaration
+class DartAbstractType;
+
 class DartStub : public DartFnBase
 {
 public:
@@ -68,8 +71,8 @@ private:
 // TypeTestStub
 class DartTypeStub : public DartStub {
 public:
-	DartTypeStub(const dart::CodePtr ptr, const uint64_t addr, int64_t size, const dart::TypePtr typePtr, std::string name) :
-		DartStub(ptr, TypeCheckStub, addr, size, std::move(name)), typePtr(typePtr) {}
+	DartTypeStub(const dart::CodePtr ptr, const uint64_t addr, int64_t size, const DartAbstractType& abType, std::string name) :
+		DartStub(ptr, TypeCheckStub, addr, size, std::move(name)), abType(abType) {}
 	DartTypeStub() = delete;
 	DartTypeStub(const DartTypeStub&) = delete;
 	DartTypeStub(DartTypeStub&&) = delete;
@@ -78,7 +81,9 @@ public:
 	//virtual std::string Name() const { return "IsType_" + name + "_Stub"; }
 	virtual std::string FullName() const { return "IsType_" + name + "_Stub"; }
 
-	const dart::TypePtr typePtr;
+	// With the Record type in Dart 3.0, Test stub can be Type or RecordType
+	// So, we have to use AbstractType
+	const DartAbstractType& abType;
 };
 
 class DartNativeFn : public DartFnBase

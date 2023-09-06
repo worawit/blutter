@@ -69,6 +69,10 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 			throw std::runtime_error("Type parameter in Object Pool");
 		case dart::kTypeCid:
 			return new VarType(*app.TypeDb()->FindOrAdd(dart::Type::Cast(obj).ptr()));
+#ifdef HAS_RECORD_TYPE
+		case dart::kRecordTypeCid:
+			return new VarRecordType(*app.TypeDb()->FindOrAdd(dart::RecordType::Cast(obj).ptr()));
+#endif
 		case dart::kTypeParameterCid:
 			return new VarTypeParameter(*app.TypeDb()->FindOrAdd(dart::TypeParameter::Cast(obj).ptr()));
 		case dart::kFunctionTypeCid:

@@ -45,6 +45,34 @@ std::string DartType::ToString(bool showTypeArgs) const
 	return txt;
 }
 
+#ifdef HAS_RECORD_TYPE
+std::string DartRecordType::ToString() const
+{
+	std::string txt = "(";
+	const intptr_t num_positional_fields = fieldTypes.size() - fieldNames.size();
+	for (auto i = 0; i < fieldTypes.size(); i++) {
+		if (i != 0) {
+			txt += ", ";
+		}
+		if (i == num_positional_fields) {
+			txt += '{';
+		}
+		txt += fieldTypes[i]->ToString();
+		if (i >= num_positional_fields) {
+			txt += ' ';
+			txt += fieldNames[i - num_positional_fields];
+		}
+	}
+	if (num_positional_fields < fieldTypes.size()) {
+		txt += '}';
+	}
+	txt += ')';
+	if (IsNullable())
+		txt += '?';
+	return txt;
+}
+#endif
+
 #ifdef HAS_TYPE_REF
 std::string DartTypeRef::ToString() const
 {
@@ -156,6 +184,40 @@ DartType* DartTypeDb::FindOrAdd(dart::TypePtr typePtr)
 	return dartType;
 }
 
+#ifdef HAS_RECORD_TYPE
+DartRecordType* DartTypeDb::FindOrAdd(dart::RecordTypePtr recordTypePtr)
+{
+	auto ptr = (intptr_t)recordTypePtr;
+	if (typesMap.contains(ptr)) {
+		return typesMap[ptr]->AsRecordType();
+	}
+
+	auto thread = dart::Thread::Current();
+	auto zone = thread->zone();
+
+	const auto& recordType = dart::RecordType::Handle(zone, recordTypePtr);
+
+	std::vector<std::string> fieldNames;
+	const auto& field_names = dart::Array::Handle(zone, recordType.GetFieldNames(thread));
+	auto& name = dart::String::Handle(zone);
+	for (intptr_t i = 0; i < field_names.Length(); i++) {
+		name ^= field_names.At(i);
+		fieldNames.push_back(name.ToCString());
+	}
+
+	auto dartRecordType = new DartRecordType(recordType.IsNullable(), std::move(fieldNames));
+	typesMap[ptr] = dartRecordType;
+
+	const auto num_fields = recordType.NumFields();
+	for (intptr_t i = 0; i < num_fields; i++) {
+		auto abTypePtr = recordType.FieldTypeAt(i);
+		dartRecordType->fieldTypes.push_back(FindOrAdd(abTypePtr));
+	}
+
+	return dartRecordType;
+}
+#endif
+
 DartTypeParameter* DartTypeDb::FindOrAdd(dart::TypeParameterPtr typeParamPtr)
 {
 	auto ptr = (intptr_t)typeParamPtr;
@@ -167,6 +229,7 @@ DartTypeParameter* DartTypeDb::FindOrAdd(dart::TypeParameterPtr typeParamPtr)
 	// Add it to DB first. the bound might be many recursive calls
 	auto dartTypeParam = new DartTypeParameter(typeParam.IsNullable(), (uint16_t)typeParam.base(), (uint16_t)typeParam.index(), typeParam.IsClassTypeParameter());
 	typesMap[ptr] = dartTypeParam;
+
 	dartTypeParam->bound = FindOrAdd(typeParam.bound());
 
 	return dartTypeParam;
@@ -235,16 +298,16 @@ DartAbstractType* DartTypeDb::FindOrAdd(dart::AbstractTypePtr abTypePtr)
 	switch (abTypePtr.GetClassId()) {
 	case dart::kTypeCid:
 		return FindOrAdd(dart::Type::RawCast(abTypePtr));
+#ifdef HAS_RECORD_TYPE
+	case dart::kRecordTypeCid:
+		return FindOrAdd(dart::RecordType::RawCast(abTypePtr));
+#endif
 #ifdef HAS_TYPE_REF
 	case dart::kTypeRefCid: {
-		//auto& typeRef = dart::TypeRef::Handle(dart::TypeRef::RawCast(abTypePtr));
-		//auto typePtr = typeRef.type();
 		auto typePtr = dart::TypeRef::RawCast(abTypePtr)->untag()->type();
 		ASSERT(typePtr.GetClassId() == dart::kTypeCid);
 		return new DartTypeRef(*FindOrAdd(dart::Type::RawCast(typePtr)));
 	}
-#else
-	//case dart::kRecordTypeCid:
 #endif
 	case dart::kTypeParameterCid:
 		return FindOrAdd(dart::TypeParameter::RawCast(abTypePtr));

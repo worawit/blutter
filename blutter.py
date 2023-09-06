@@ -44,6 +44,8 @@ def find_compat_macro(dart_version: str):
         # Remove TypeRef https://github.com/dart-lang/sdk/commit/2ee6fcf5148c34906c04c2ac518077c23891cd1b
         if mm.find(b'V(TypeRef)') != -1:
             macros.append('-DHAS_TYPE_REF=1')
+        if mm.find(b'V(RecordType)') != -1:
+            macros.append('-DHAS_RECORD_TYPE=1')
     
     with open(os.path.join(vm_path, 'class_table.h'), 'rb') as f:
         mm = mmap.mmap(f.fileno(), 0, access = mmap.ACCESS_READ)
