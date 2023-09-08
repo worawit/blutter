@@ -62,7 +62,6 @@ if (MSVC)
 		set(cc_opts /Oy /GR- /sdl- /Oi /GL /Gy /Zc:wchar_t /Zc:inline)
 		target_link_options(${BINNAME} PRIVATE /LTCG /OPT:REF /OPT:ICF)
 	endif()
-
 else()
 	# TODO: gcc options to remove dead code in static dartvm library
 	set(cc_opts
@@ -71,7 +70,6 @@ else()
 		#-Wl,--gc-sections
 		#-fno-exceptions -Wall
 	)
-
 endif()
 
 get_filename_component(FRIDA_TEMPLATE_DIR "${PROJECT_SOURCE_DIR}/../scripts/" ABSOLUTE)
