@@ -509,11 +509,7 @@ void DartApp::finalizeFunctionsInfo()
 {
 	auto& parentFn = dart::Function::Handle();
 	std::unordered_map<uint64_t, DartFunction*> pending_functions;
-	for (auto& [_, fnBase] : functions) {
-		if (fnBase->IsStub())
-			continue;
-
-		auto dartFn = fnBase->AsFunction();
+	for (auto& [_, dartFn] : functions) {
 		// update parent pointer
 		if (dartFn->parent) {
 			parentFn = dart::FunctionPtr((intptr_t)dartFn->parent);
@@ -567,6 +563,15 @@ void DartApp::finalizeFunctionsInfo()
 		pending_functions = std::move(new_functions);
 		new_functions.clear();
 	}
+
+	// null self parent
+	for (auto& [_, dartFn] : functions) {
+		// update parent pointer
+		if (dartFn->parent == dartFn) {
+			dartFn->parent = nullptr;
+		}
+	}
+
 }
 
 void DartApp::walkObject(dart::Object& obj)
