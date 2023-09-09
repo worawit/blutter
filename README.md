@@ -3,6 +3,7 @@ Flutter Mobile Application Reverse Engineering Tool by Compiling Dart AOT Runtim
 
 Currently the application supports only Android libapp.so.
 Also the application is currently work only against recent Dart versions.
+For high priority missing features, see [TODO](#todo)
 
 
 ## Environment Setup
@@ -18,12 +19,12 @@ apt install python3-pyelftools python3-requests git cmake ninja-build \
 ```
 
 ### Windows
-- Install latest Microsoft C/C++ Compiler with CMake tools
+- Install latest Visual Studio with "Desktop development with C++" and "C++ CMake tools"
 - Install required libraries (libcapstone and libicu4c)
 ```
 python scripts\init_env_win.py
 ```
-- Start x64 Developer Command Prompt
+- Start "x64 Native Tools Command Prompt"
 
 ### macOS Ventura (clang 15)
 - Install XCode
@@ -56,7 +57,7 @@ python3 blutter.py path/to/app/lib/arm64-v8a out_dir --rebuild
 
 
 ## Directories
-- **bin** contains blutter executables for each Dart version in "blutter_dartvm\<ver\>_\<os\>_\<arch\>" format
+- **bin** contains blutter executables for each Dart version in "blutter_dartvm\<ver\>\_\<os\>\_\<arch\>" format
 - **blutter** contains source code. need building against Dart VM library
 - **build** contains building projects which can be deleted after finishing the build process
 - **dartsdk** contains checkout of Dart Runtime which can be deleted after finishing the build process
@@ -71,3 +72,13 @@ I use Visual Studio to delevlop Blutter on Windows. ```--vs-sln``` options can b
 python blutter.py path\to\lib\arm64-v8a build\vs --vs-sln
 ```
 
+## TODO
+- More code analysis
+  - Function arguments and return type
+  - Some psuedo code for code pattern
+- Generate better Frida script
+  - More internal classes
+  - Object modification
+- Obfuscated app (still missing many functions)
+- Reading iOS binary
+- Input as apk or ipa
