@@ -1,4 +1,6 @@
 import os
+import shutil
+import stat
 import subprocess
 import sys
 
@@ -19,7 +21,17 @@ DART_GIT_URL = 'https://github.com/dart-lang/sdk.git'
 
 def checkout_dart(ver):
     clonedir = os.path.join(SDK_DIR, 'v'+ver)
-    # if the source directory is existed. assume the code has already been cloned
+
+    # if no version file,assume previous clone is failed. delete the whole directory and try again.
+    version_file = os.path.join(clonedir, 'runtime', 'vm', 'version.cc')
+    if os.path.exists(clonedir) and not os.path.exists(version_file):
+        print('Delete incomplete clone directory ' + clonedir)
+        def remove_readonly(func, path, _):
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        shutil.rmtree(clonedir, onerror=remove_readonly)
+    
+    # clone Dart source code
     if not os.path.exists(clonedir):
         # minimum clone repository at the target branch
         subprocess.run([GIT_CMD, '-c', 'advice.detachedHead=false', 'clone', '-b', ver, '--depth', '1', '--filter=blob:none', '--sparse', '--progress', DART_GIT_URL, clonedir], check=True)
