@@ -1,7 +1,7 @@
 # B(l)utter
 Flutter Mobile Application Reverse Engineering Tool by Compiling Dart AOT Runtime
 
-Currently the application supports only Android libapp.so.
+Currently the application supports only Android libapp.so (arm64 only).
 Also the application is currently work only against recent Dart versions.
 
 For high priority missing features, see [TODO](#todo)
@@ -20,6 +20,7 @@ apt install python3-pyelftools python3-requests git cmake ninja-build \
 ```
 
 ### Windows
+- Install git and python 3
 - Install latest Visual Studio with "Desktop development with C++" and "C++ CMake tools"
 - Install required libraries (libcapstone and libicu4c)
 ```
