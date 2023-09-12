@@ -247,14 +247,14 @@ function isHeapObject(ptr) {
 function getObjectTag(ptr) {
     const tag = ptr.readU64();
     const objSize = ((tag >> 8) & 0xf) * 8;
-    const cid = (tag >> 12) & 0xfffff;
+    const cid = (tag >> ClassIdTagPos) & ClassIdTagMask;
     //const hashId = (tag >> 32) & 0xffffffff;
     return [cid, objSize];
 }
 
 function getObjectCid(ptr) {
     const tag = ptr.readU32();
-    return (tag >> 12) & 0xfffff;
+    return (tag >> ClassIdTagPos) & ClassIdTagMask;
 }
 
 function decompressPointer(dptr) {
