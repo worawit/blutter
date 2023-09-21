@@ -70,76 +70,6 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 	return fnName;
 }
 
-enum UseGlobal { USE_NONE = 0, USE_THREAD, USE_PP };
-static UseGlobal findUseGlobal(AsmInstruction& insn)
-{
-	for (uint8_t i = 0; i < insn.op_count(); i++) {
-		auto& operand = insn.ops[i];
-		auto reg = ARM64_REG_INVALID;
-		if (operand.type == ARM64_OP_REG)
-			reg = operand.reg;
-		else if (operand.type == ARM64_OP_MEM)
-			reg = operand.mem.base;
-		if (reg == CSREG_DART_THR) {
-			return USE_THREAD;
-		}
-		else if (reg == CSREG_DART_PP) {
-			return USE_PP;
-		}
-	}
-	return USE_NONE;
-}
-
-static intptr_t findObjectPoolOffset(AsmInstruction insn)
-{
-	if (insn.id() == ARM64_INS_LDR) {
-		RELEASE_ASSERT(insn.op_count() == 2);
-		if (insn.ops[1].mem.disp == 0) {
-			// more than 16 bits
-			// MOV X5, #offset_low
-			// MOVK X5, #offset_high LSL#16
-			// LDR X6, [X27,X5]
-			--insn;
-			RELEASE_ASSERT(insn.id() == ARM64_INS_MOVK);
-			RELEASE_ASSERT(insn.ops[1].shift.value == 16);
-			intptr_t base = insn.ops[1].imm << 16;
-			--insn;
-			RELEASE_ASSERT(insn.id() == ARM64_INS_MOV);
-			RELEASE_ASSERT(insn.ops[1].type == ARM64_OP_IMM);
-			return base + insn.ops[1].imm;
-		}
-		else {
-			// less than 12 bits
-			// LDR X24, [X27,#offset]
-			return insn.ops[1].mem.disp;
-		}
-	}
-	else if (insn.id() == ARM64_INS_ADD) {
-		// 12 bits - 16 bits
-		// ADD x0, x27, #offset_high LSL#12
-		// LDR x0, [x0, #offset_low]
-		RELEASE_ASSERT(insn.ops[1].reg == CSREG_DART_PP);
-		RELEASE_ASSERT(insn.ops[2].type == ARM64_OP_IMM);
-		RELEASE_ASSERT(insn.ops[2].shift.type == ARM64_SFT_LSL && insn.ops[2].shift.value == 12);
-		intptr_t base = insn.ops[2].imm << 12;
-		++insn;
-
-		if (insn.id() == ARM64_INS_LDR) {
-			return base + insn.ops[1].mem.disp;
-		}
-		else if (insn.id() == ARM64_INS_LDP) {
-			return base + insn.ops[2].mem.disp;
-		}
-		else if (insn.id() == ARM64_INS_ADD) {
-			// use when loading pair from object pool (local 2 entries)
-			// see it for UnlinkedCall by the next entry is the jump address
-			RELEASE_ASSERT(insn.ops[2].type == ARM64_OP_IMM);
-			return base + insn.ops[2].imm;
-		}
-	}
-	FATAL("not object pool access");
-}
-
 void DartDumper::Dump4Ida(std::filesystem::path outDir)
 {
 	std::filesystem::create_directory(outDir);
@@ -365,41 +295,56 @@ void DartDumper::DumpCode(const char* out_dir)
 				// use as app is loaded at zero
 				if (dartFn->Size() > 0) {
 					auto& asmTexts = dartFn->GetAnalyzedData()->asmTexts.Data();
+					auto& il_insns = dartFn->GetAnalyzedData()->il_insns;
+					auto il_itr = il_insns.begin();
+					AddrRange range;
 					ASSERT(!asmTexts.empty());
 					for (auto& asmText : asmTexts) {
-						std::string extra = "";
+						std::string extra;
 						switch (asmText.dataType) {
 						case AsmText::ThreadOffset:
 							extra = "THR::" + GetThreadOffsetName(asmText.threadOffset);
 							break;
-						case AsmText::Instruction:
-							if (asmText.insn->Kind() == ILInstr::LoadObject) {
-								const auto val = reinterpret_cast<LoadObjectInstr*>(asmText.insn)->GetValue();
-								if (val->Storage().kind == VarStorage::Pool) {
-									extra = getPoolObjectDescription(val->Storage().offset);
-								}
-								else if (val->Storage().kind == VarStorage::Immediate) {
-									extra = val->ValueString();
-								}
-							}
-							else if (asmText.insn->Kind() == ILInstr::Call) {
-								auto* fn = reinterpret_cast<CallInstr*>(asmText.insn)->GetFunction();
-								if (fn) {
-									extra = fn->FullName();
-									auto retCid = fn->ReturnType();
-									if (retCid != dart::kIllegalCid) {
-										auto retCls = app.classes.at(retCid);
-										extra += std::format(" -> {} (size={:#x})", retCls->FullName(), retCls->Size());
-									}
+						case AsmText::PoolOffset:
+							extra = getPoolObjectDescription(asmText.poolOffset);
+							break;
+						case AsmText::Boolean:
+							extra = asmText.boolVal ? "true" : "false";
+							break;
+						case AsmText::Call: {
+							auto* fn = app.GetFunction(asmText.callAddress);
+							if (fn) {
+								extra = fn->FullName();
+								auto retCid = fn->ReturnType();
+								if (retCid != dart::kIllegalCid) {
+									auto retCls = app.classes.at(retCid);
+									extra += std::format(" -> {} (size={:#x})", retCls->FullName(), retCls->Size());
 								}
 							}
 							break;
 						}
+						}
+
+						of << "    // ";
+
+						if (range.Has(asmText.addr)) {
+							of << "    ";
+						}
+						else {
+							while ((*il_itr)->Start() < asmText.addr) {
+								++il_itr;
+							}
+							if ((*il_itr)->Start() == asmText.addr && (*il_itr)->Kind() != ILInstr::Unknown) {
+								of << std::format("{:#x}: {}\n", asmText.addr, (*il_itr)->ToString());
+								of << "    //     ";
+								range = (*il_itr)->Range();
+							}
+						}
 
 						if (extra.empty())
-							of << std::format("    // {:#x}: {}\n", asmText.addr, &asmText.text[0]);
+							of << std::format("{:#x}: {}\n", asmText.addr, &asmText.text[0]);
 						else
-							of << std::format("    // {:#x}: {}  ; {}\n", asmText.addr, &asmText.text[0], extra);
+							of << std::format("{:#x}: {}  ; {}\n", asmText.addr, &asmText.text[0], extra);
 					}
 				}
 

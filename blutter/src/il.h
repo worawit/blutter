@@ -9,7 +9,10 @@ struct AddrRange {
 	uint64_t start;
 	uint64_t end;
 
+	AddrRange() : start(0), end(0) {}
 	AddrRange(uint64_t start, uint64_t end) : start(start), end(end) {}
+
+	bool Has(uint64_t addr) { return addr >= start && addr < end; }
 };
 
 class ILInstr {
@@ -21,11 +24,16 @@ public:
 		AllocateStack,
 		CheckStackOverflow,
 		LoadObject,
+		LoadImm,
 		DecompressPointer,
 		GdtCall,
 		Call,
 		Return,
-		CheckIfSmi,
+		BranchIfSmi,
+		LoadClassId,
+		LoadTaggedClassIdMayBeSmi,
+		BoxInt64,
+		LoadInt32,
 	};
 
 	ILInstr(const ILInstr&) = delete;
@@ -35,6 +43,9 @@ public:
 
 	virtual std::string ToString() = 0;
 	ILKind Kind() { return kind; }
+	uint64_t Start() { return addrRange.start; }
+	uint64_t End() { return addrRange.end; }
+	AddrRange Range() { return addrRange; }
 
 protected:
 	ILInstr(ILKind kind, AddrRange& addrRange) : addrRange(addrRange), kind(kind) {}
@@ -136,6 +147,21 @@ protected:
 	std::shared_ptr<VarItem> val;
 };
 
+class LoadImmInstr : public ILInstr {
+public:
+	LoadImmInstr(AddrRange addrRange, A64::Register dstReg, int64_t val) : ILInstr(LoadImm, addrRange), dstReg(dstReg), val(val) {}
+	LoadImmInstr() = delete;
+	LoadImmInstr(LoadImmInstr&&) = delete;
+	LoadImmInstr& operator=(const LoadImmInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = {:#x}", A64::GetRegisterName(dstReg), val);
+	}
+
+	A64::Register dstReg;
+	int64_t val;
+};
+
 class DecompressPointerInstr : public ILInstr {
 public:
 	DecompressPointerInstr(cs_insn* insn, VarStorage dst) : ILInstr(DecompressPointer, insn), dst(dst) {}
@@ -159,7 +185,7 @@ public:
 	GdtCallInstr& operator=(const GdtCallInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("GDT[cid + {:#x}]()", offset);
+		return std::format("GDT[cid_x0 + {:#x}]()", offset);
 	}
 
 protected:
@@ -168,21 +194,28 @@ protected:
 
 class CallInstr : public ILInstr {
 public:
-	CallInstr(cs_insn* insn, DartFnBase* fnBase) : ILInstr(Call, insn), fnBase(fnBase) {}
+	CallInstr(cs_insn* insn, DartFnBase* fnBase, uint64_t addr) : ILInstr(Call, insn), fnBase(fnBase), addr(addr) {}
 	CallInstr() = delete;
 	CallInstr(CallInstr&&) = delete;
 	CallInstr& operator=(const CallInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{}()", fnBase->Name());
+		if (fnBase != nullptr)
+			return std::format("{}()", fnBase->Name());
+		return std::format("call {:#x}", addr);
 	}
 
 	DartFnBase* GetFunction() {
 		return fnBase;
 	}
 
+	uint64_t GetCallAddress() {
+		return addr;
+	}
+
 protected:
 	DartFnBase* fnBase;
+	uint64_t addr;
 };
 
 class ReturnInstr : public ILInstr {
@@ -195,4 +228,85 @@ public:
 	virtual std::string ToString() {
 		return "ret";
 	}
+};
+
+class BranchIfSmiInstr : public ILInstr {
+public:
+	BranchIfSmiInstr(cs_insn* insn, A64::Register objReg, int64_t branchAddr) : ILInstr(BranchIfSmi, insn), objReg(objReg), branchAddr(branchAddr) {}
+	BranchIfSmiInstr() = delete;
+	BranchIfSmiInstr(BranchIfSmiInstr&&) = delete;
+	BranchIfSmiInstr& operator=(const BranchIfSmiInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("branchIfSmi({}, {:#x})", A64::GetRegisterName(objReg), branchAddr);
+	}
+
+	A64::Register objReg;
+	int64_t branchAddr;
+};
+
+class LoadClassIdInstr : public ILInstr {
+public:
+	LoadClassIdInstr(AddrRange addrRange, A64::Register objReg, A64::Register cidReg) : ILInstr(LoadClassId, addrRange), objReg(objReg), cidReg(cidReg) {}
+	LoadClassIdInstr() = delete;
+	LoadClassIdInstr(LoadClassIdInstr&&) = delete;
+	LoadClassIdInstr& operator=(const LoadClassIdInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = LoadClassIdInstr({})", A64::GetRegisterName(cidReg), A64::GetRegisterName(objReg));
+	}
+
+	A64::Register objReg;
+	A64::Register cidReg;
+};
+
+class LoadTaggedClassIdMayBeSmiInstr : public ILInstr {
+public:
+	LoadTaggedClassIdMayBeSmiInstr(AddrRange addrRange, std::unique_ptr<LoadImmInstr> il_loadImm, 
+		std::unique_ptr<BranchIfSmiInstr> il_branchIfSmi, std::unique_ptr<LoadClassIdInstr> il_loadClassId) 
+		: ILInstr(LoadTaggedClassIdMayBeSmi, addrRange), taggedCidReg(il_loadClassId->cidReg), objReg(il_loadClassId->objReg),
+		il_loadImm(std::move(il_loadImm)), il_branchIfSmi(std::move(il_branchIfSmi)), il_loadClassId(std::move(il_loadClassId)) {}
+	LoadTaggedClassIdMayBeSmiInstr() = delete;
+	LoadTaggedClassIdMayBeSmiInstr(LoadTaggedClassIdMayBeSmiInstr&&) = delete;
+	LoadTaggedClassIdMayBeSmiInstr& operator=(const LoadTaggedClassIdMayBeSmiInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = LoadTaggedClassIdMayBeSmiInstr({})", A64::GetRegisterName(taggedCidReg), A64::GetRegisterName(objReg));
+	}
+
+	A64::Register taggedCidReg;
+	A64::Register objReg;
+	std::unique_ptr<LoadImmInstr> il_loadImm;
+	std::unique_ptr<BranchIfSmiInstr> il_branchIfSmi;
+	std::unique_ptr<LoadClassIdInstr> il_loadClassId;
+};
+
+class BoxInt64Instr : public ILInstr {
+public:
+	BoxInt64Instr(AddrRange addrRange, A64::Register objReg, A64::Register srcReg) : ILInstr(BoxInt64, addrRange), objReg(objReg), srcReg(srcReg) {}
+	BoxInt64Instr() = delete;
+	BoxInt64Instr(BoxInt64Instr&&) = delete;
+	BoxInt64Instr& operator=(const BoxInt64Instr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = BoxInt64Instr({})", A64::GetRegisterName(objReg), A64::GetRegisterName(srcReg));
+	}
+
+	A64::Register objReg;
+	A64::Register srcReg;
+};
+
+class LoadInt32Instr : public ILInstr {
+public:
+	LoadInt32Instr(AddrRange addrRange, A64::Register dstReg, A64::Register srcObjReg) : ILInstr(LoadInt32, addrRange), dstReg(dstReg), srcObjReg(srcObjReg) {}
+	LoadInt32Instr() = delete;
+	LoadInt32Instr(LoadInt32Instr&&) = delete;
+	LoadInt32Instr& operator=(const LoadInt32Instr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = LoadInt32Instr({})", A64::GetRegisterName(dstReg), A64::GetRegisterName(srcObjReg));
+	}
+
+	A64::Register dstReg;
+	A64::Register srcObjReg;
 };

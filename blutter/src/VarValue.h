@@ -56,6 +56,7 @@ struct VarValue {
 		Expression = -1,
 		TaggedCid = -2,
 		NativeInt = -3,
+		NativeDouble = -4,
 	};
 
 	VarValue(ValueType typeId, bool hasValue) : typeId(typeId), hasValue(hasValue) {}
@@ -93,8 +94,8 @@ struct VarBoolean : public VarValue {
 struct VarInteger : public VarValue {
 	// int type is same as type in VarValue
 	// Note: VarInteger = unknown integer type (maybe native, smi, mint)
-	explicit VarInteger(ValueType intTypeId, int64_t val) : VarValue(dart::kIntegerCid, true), intTypeId(intTypeId), val(val) {}
-	explicit VarInteger(ValueType intTypeId) : VarValue(dart::kIntegerCid, false), intTypeId(intTypeId), val(0) {}
+	explicit VarInteger(int64_t val, ValueType intTypeId = dart::kIntegerCid) : VarValue(dart::kIntegerCid, true), intTypeId(intTypeId), val(val) {}
+	explicit VarInteger(ValueType intTypeId = dart::kIntegerCid) : VarValue(dart::kIntegerCid, false), intTypeId(intTypeId), val(0) {}
 	virtual std::string ToString() { return std::to_string(Value()); }
 	int64_t Value() { return (intTypeId == dart::kSmiCid) ? val >> dart::kSmiTagSize : val; }
 
@@ -103,17 +104,18 @@ struct VarInteger : public VarValue {
 };
 
 struct VarDouble : public VarValue {
-	explicit VarDouble(double val) : VarValue(dart::kDoubleCid, true), val(val) {}
-	explicit VarDouble() : VarValue(dart::kDoubleCid, false), val(0.0) {}
+	explicit VarDouble(double val, ValueType doubleTypeId = dart::kDoubleCid) : VarValue(dart::kDoubleCid, true), doubleTypeId(doubleTypeId), val(val) {}
+	explicit VarDouble(ValueType doubleTypeId = dart::kDoubleCid) : VarValue(dart::kDoubleCid, false), doubleTypeId(doubleTypeId), val(0.0) {}
 	virtual std::string ToString() { return std::to_string(val); }
 
+	ValueType doubleTypeId;
 	double val;
 };
 
 struct VarString : public VarValue {
 	explicit VarString(std::string str) : VarValue(dart::kStringCid, true), str(std::move(str)) {}
 	explicit VarString() : VarValue(dart::kStringCid, false) {}
-	virtual std::string ToString() { return Util::Quote(str); }
+	virtual std::string ToString() { return Util::UnescapeWithQuote(str.c_str()); }
 
 	std::string str;
 };

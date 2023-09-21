@@ -14,7 +14,7 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 		auto ptr = pool.ObjectAt(idx);
 		// Smi is special case. Have to handle first
 		if (!ptr.IsHeapObject()) {
-			return new VarInteger(dart::kSmiCid, dart::RawSmiValue(dart::Smi::RawCast(ptr)));
+			return new VarInteger(dart::RawSmiValue(dart::Smi::RawCast(ptr)), dart::kSmiCid);
 		}
 
 		if (ptr.IsRawNull())
@@ -33,9 +33,9 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 
 		switch (obj.GetClassId()) {
 		case dart::kSmiCid:
-			return new VarInteger(dart::kSmiCid, dart::Smi::Cast(obj).Value());
+			return new VarInteger(dart::Smi::Cast(obj).Value(), dart::kSmiCid);
 		case dart::kMintCid:
-			return new VarInteger(dart::kMintCid, dart::Mint::Cast(obj).AsInt64Value());
+			return new VarInteger(dart::Mint::Cast(obj).AsInt64Value(), dart::kMintCid);
 		case dart::kDoubleCid:
 			return new VarDouble(dart::Double::Cast(obj).value());
 		case dart::kBoolCid:
@@ -108,8 +108,8 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 	else if (objType == dart::ObjectPool::EntryType::kImmediate) {
 		auto imm = pool.RawValueAt(idx);
 		if (A64::IsDecimalRegister(dstReg))
-			return new VarDouble(*((double*)&imm));
-		return new VarInteger(dart::kIntegerCid, imm);
+			return new VarDouble(*((double*)&imm), VarType::NativeDouble);
+		return new VarInteger(imm, VarValue::NativeInt);
 	}
 	else if (objType == dart::ObjectPool::EntryType::kNativeFunction) {
 		//val = pool.RawValueAt(idx);
@@ -265,22 +265,39 @@ static cs_insn* processCheckStackOverflowInstr(AnalyzedFnData* fnInfo, AsmInstru
 		if (insn.ops[1].mem.base == CSREG_DART_THR && insn.ops[1].mem.disp == AOT_Thread_stack_limit_offset) {
 			RELEASE_ASSERT(insn.ops[0].reg == CSREG_DART_TMP);
 			auto insn0 = insn.ptr();
-			++insn;
 
+			++insn;
 			// cmp SP, TMP
 			RELEASE_ASSERT(insn.id() == ARM64_INS_CMP);
 			RELEASE_ASSERT(insn.ops[0].reg == CSREG_DART_SP);
 			RELEASE_ASSERT(insn.ops[1].reg == CSREG_DART_TMP);
-			++insn;
 
-			// b.ls #overflow_target
-			RELEASE_ASSERT(insn.IsBranch(ARM64_CC_LS));
+			++insn;
+			RELEASE_ASSERT(insn.id() == ARM64_INS_B);
 			RELEASE_ASSERT(insn.ops[0].type == ARM64_OP_IMM);
-			uint64_t target = (uint64_t)insn.ops[0].imm;
-			// the dart compiler always put slow path at the end of function after "ret"
-			RELEASE_ASSERT(target < fnInfo->dartFn.AddressEnd() && target >= insn.address());
-			fnInfo->AddInstruction(std::make_unique<CheckStackOverflowInstr>(AddrRange(insn0->address, insn.NextAddress()), target));
-			return insn.ptr();
+			uint64_t target = 0;
+			// b.ls #overflow_target
+			if (insn.cc() == ARM64_CC_LS) {
+				target = (uint64_t)insn.ops[0].imm;
+			}
+			else if (insn.cc() == ARM64_CC_HI) {
+				const auto cont_target = insn.ops[0].imm;
+
+				++insn;
+				RELEASE_ASSERT(insn.IsBranch());
+				RELEASE_ASSERT(insn.NextAddress() == cont_target);
+				target = (uint64_t)insn.ops[0].imm;
+			}
+			else {
+				FATAL("unexpect branch condition for CheckStackOverflow");
+			}
+
+			if (target != 0) {
+				// the dart compiler always put slow path at the end of function after "ret"
+				RELEASE_ASSERT(target < fnInfo->dartFn.AddressEnd() && target >= insn.address());
+				fnInfo->AddInstruction(std::make_unique<CheckStackOverflowInstr>(AddrRange(insn0->address, insn.NextAddress()), target));
+				return insn.ptr();
+			}
 		}
 	}
 	return nullptr;
@@ -316,7 +333,7 @@ static cs_insn* processCallInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
 	if (insn.id() == ARM64_INS_BL) {
 		if (insn.ops[0].type == ARM64_OP_IMM) {
 			const auto target = insn.ops[0].imm;
-			fnInfo->AddInstruction(std::make_unique<CallInstr>(insn.ptr(), fnInfo->app.GetFunction(target)));
+			fnInfo->AddInstruction(std::make_unique<CallInstr>(insn.ptr(), fnInfo->app.GetFunction(target), (uint64_t)target));
 			return insn.ptr();
 		}
 		// should indirect call handle here
@@ -326,9 +343,45 @@ static cs_insn* processCallInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
 		const auto& dartFn = fnInfo->dartFn;
 		const auto target = insn.ops[0].imm;
 		if (target < dartFn.Address() || target >= dartFn.AddressEnd()) {
-			fnInfo->AddInstruction(std::make_unique<CallInstr>(insn.ptr(), fnInfo->app.GetFunction(target)));
+			fnInfo->AddInstruction(std::make_unique<CallInstr>(insn.ptr(), fnInfo->app.GetFunction(target), (uint64_t)target));
 			return insn.ptr();
 		}
+	}
+
+	return nullptr;
+}
+
+static cs_insn* processLoadImmInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
+{
+	auto insn0 = insn.ptr();
+	int64_t imm = 0;
+	arm64_reg dstReg = ARM64_REG_INVALID;
+	// libcapstone5 use MOV instead of MOVZ
+	if (insn.id() == ARM64_INS_MOVZ || (insn.id() == ARM64_INS_MOV && insn.op_count() == 2 && insn.ops[1].type == ARM64_OP_IMM)) {
+		imm = insn.ops[1].imm;
+		dstReg = insn.ops[0].reg;
+
+		++insn;
+		if (insn.id() == ARM64_INS_MOVK && insn.ops[0].reg == dstReg && insn.ops[1].shift.value == 16) {
+			imm |= insn.ops[1].imm << 16;
+		}
+		else {
+			--insn;
+		}
+	}
+	else if (insn.id() == ARM64_INS_ORR && insn.ops[1].reg == ARM64_REG_XZR && insn.ops[2].type == ARM64_OP_IMM) {
+		imm = insn.ops[2].imm;
+		dstReg = insn.ops[0].reg;
+	}
+	else if (insn.id() == ARM64_INS_MOVN) {
+		imm = insn.ops[1].imm << insn.ops[1].shift.value;
+		imm = ~imm;
+		dstReg = insn.ops[0].reg;
+	}
+
+	if (dstReg != ARM64_REG_INVALID) {
+		fnInfo->AddInstruction(std::make_unique<LoadImmInstr>(AddrRange(insn0->address, insn.NextAddress()), A64::FromCsReg(dstReg), imm));
+		return insn.ptr();
 	}
 
 	return nullptr;
@@ -349,50 +402,36 @@ static cs_insn* processGdtCallInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
 	// 0x220288: add  x30, x0, x17
 	// 0x22028c: ldr  x30, [x21, x30, lsl #3]
 	// 0x220290: blr  x30
-
-	auto insn0 = insn.ptr();
-	arm64_reg cidReg = ARM64_REG_INVALID;
-	int64_t offset = 0;
-	// expect offset less than 16 bits, libapp MUST be very large to make offset larger than 16 bits
-	if (insn.id() == ARM64_INS_MOVZ && insn.ops[0].reg == CSREG_DART_TMP2) {
-		offset = insn.ops[1].imm;
-		const auto tmpReg = insn.ops[0].reg;
-		++insn;
-
-		if (insn.id() == ARM64_INS_MOVK && insn.ops[0].reg == tmpReg && insn.ops[1].shift.value == 16) {
-			// huge app
-			offset |= insn.ops[1].imm << 16;
-			++insn;
-		}
-		if (insn.id() == ARM64_INS_ADD && insn.ops[0].reg == CSREG_DART_LR) {
-			RELEASE_ASSERT(insn.ops[2].reg == tmpReg);
-			cidReg = insn.ops[1].reg;
-		}
-	}
-	else if (insn.id() == ARM64_INS_ORR && insn.ops[0].reg == CSREG_DART_TMP2 && insn.ops[1].reg == ARM64_REG_XZR && insn.ops[2].type == ARM64_OP_IMM) {
-		offset = insn.ops[2].imm;
-		const auto tmpReg = insn.ops[0].reg;
-		++insn;
-
-		if (insn.id() == ARM64_INS_ADD && insn.ops[0].reg == CSREG_DART_LR) {
-			RELEASE_ASSERT(insn.ops[2].reg == tmpReg);
-			cidReg = insn.ops[1].reg;
-		}
-	}
-	else if (insn.ops[0].reg == CSREG_DART_LR && (insn.id() == ARM64_INS_ADD || insn.id() == ARM64_INS_SUB)) {
-		ASSERT(insn.ops[2].type == ARM64_OP_IMM);
-		cidReg = insn.ops[1].reg;
-		offset = insn.ops[2].imm;
-		if (insn.ops[2].shift.type != ARM64_SFT_INVALID) {
-			ASSERT(insn.ops[2].shift.type == ARM64_SFT_LSL);
-			offset <<= insn.ops[2].shift.value;
-		}
-		if (insn.id() == ARM64_INS_SUB)
-			offset = -offset;
-	}
-
-	if (cidReg == ToCapstoneReg(dart::DispatchTableNullErrorABI::kClassIdReg)) {
+	if (insn.ops[0].reg == CSREG_DART_LR && (insn.id() == ARM64_INS_ADD || insn.id() == ARM64_INS_SUB) && 
+		insn.ops[1].reg == ToCapstoneReg(dart::DispatchTableNullErrorABI::kClassIdReg))
+	{
 		// this is GDT call
+		auto insn0_addr = insn.ptr()->address;
+		int64_t offset = 0;
+
+		if (insn.ops[2].type == ARM64_OP_IMM) {
+			//cidReg = insn.ops[1].reg;
+			offset = insn.ops[2].imm;
+			if (insn.ops[2].shift.type != ARM64_SFT_INVALID) {
+				ASSERT(insn.ops[2].shift.type == ARM64_SFT_LSL);
+				offset <<= insn.ops[2].shift.value;
+			}
+			if (insn.id() == ARM64_INS_SUB)
+				offset = -offset;
+		}
+		else {
+			// from reg
+			RELEASE_ASSERT(insn.id() == ARM64_INS_ADD);
+			RELEASE_ASSERT(insn.ops[2].type == ARM64_OP_REG && insn.ops[2].reg == CSREG_DART_TMP2);
+
+			auto& il = fnInfo->il_insns.back();
+			auto il_loadImm = reinterpret_cast<LoadImmInstr*>(il.get());
+			RELEASE_ASSERT(il_loadImm->dstReg == A64::TMP2_REG);
+			offset = il_loadImm->val;
+			insn0_addr = il->Start();
+			// delete the last imm IL
+			fnInfo->il_insns.pop_back();
+		}
 		//const auto selector_offset = dart::DispatchTable::kOriginElement + offset;
 		++insn;
 		RELEASE_ASSERT(insn.id() == ARM64_INS_LDR);
@@ -403,7 +442,7 @@ static cs_insn* processGdtCallInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
 		RELEASE_ASSERT(insn.id() == ARM64_INS_BLR);
 		RELEASE_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
 
-		fnInfo->AddInstruction(std::make_unique<GdtCallInstr>(AddrRange(insn0->address, insn.NextAddress()), offset));
+		fnInfo->AddInstruction(std::make_unique<GdtCallInstr>(AddrRange(insn0_addr, insn.NextAddress()), offset));
 		return insn.ptr();
 	}
 
@@ -414,6 +453,163 @@ static cs_insn* processReturnInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
 {
 	if (insn.id() == ARM64_INS_RET) {
 		fnInfo->AddInstruction(std::make_unique<ReturnInstr>(insn.ptr()));
+		return insn.ptr();
+	}
+	return nullptr;
+}
+
+static cs_insn* processBranchIfSmiInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
+{
+	if (insn.id() == ARM64_INS_TBZ && insn.ops[1].imm == dart::kSmiTag && dart::kCompressedWordSize == GetCsRegSize(insn.ops[0].reg)) {
+		const auto objReg = A64::FromCsReg(insn.ops[0].reg);
+		const auto branchAddr = insn.ops[2].imm;
+		fnInfo->AddInstruction(std::make_unique<BranchIfSmiInstr>(insn.ptr(), objReg, branchAddr));
+		return insn.ptr();
+	}
+	return nullptr;
+}
+
+static cs_insn* processLoadClassIdInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
+{
+	if (insn.id() == ARM64_INS_LDUR && insn.ops[1].mem.disp == -1) {
+		auto insn0 = insn.ptr();
+		// 0x21cb10: ldur  x1, [x0, #-1]  ; load object tag
+		const auto objReg = A64::FromCsReg(insn.ops[1].mem.base);
+		const auto cidReg = insn.ops[0].reg;
+
+		++insn;
+		// Assembler::ExtractClassIdFromTags()
+		// 0x21cb14: ubfx  x1, x1, #0xc, #0x14  ; extract object class id
+		RELEASE_ASSERT(insn.id() == ARM64_INS_UBFX);
+		RELEASE_ASSERT(insn.ops[0].reg == cidReg);
+		RELEASE_ASSERT(insn.ops[1].reg == cidReg);
+		RELEASE_ASSERT(insn.ops[2].imm == dart::UntaggedObject::kClassIdTagPos);
+		RELEASE_ASSERT(insn.ops[3].imm == dart::UntaggedObject::kClassIdTagSize);
+		fnInfo->AddInstruction(std::make_unique<LoadClassIdInstr>(AddrRange(insn0->address, insn.NextAddress()), objReg, A64::FromCsReg(cidReg)));
+		return insn.ptr();
+	}
+	return nullptr;
+}
+
+static cs_insn* processLoadTaggedClassIdMayBeSmiInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
+{
+	//   cidReg = SmiTaggedClassId
+	//   branchIfSmi(objReg, branchAddr)
+	//   cidReg = LoadClassIdInstr(objReg)
+	//   lsl  cidReg, cidReg, #1
+	// branchAddr:
+	auto& il = fnInfo->il_insns.back();
+	if (insn.id() == ARM64_INS_LSL && insn.ops[0].reg == insn.ops[1].reg && insn.ops[2].imm == dart::kSmiTagSize && il->Kind() == ILInstr::LoadClassId && fnInfo->il_insns.size() >= 3) {
+		auto il_loadClassId = reinterpret_cast<LoadClassIdInstr*>(il.get());
+		if (il_loadClassId->cidReg == A64::FromCsReg(insn.ops[0].reg)) {
+			auto& il2 = fnInfo->il_insns[fnInfo->il_insns.size() - 2];
+			if (il2->Kind() == ILInstr::BranchIfSmi) {
+				auto il_branchIfSmi = reinterpret_cast<BranchIfSmiInstr*>(il2.get());
+				RELEASE_ASSERT(il_branchIfSmi->objReg == il_loadClassId->objReg);
+				auto& il3 = fnInfo->il_insns[fnInfo->il_insns.size() - 3];
+				RELEASE_ASSERT(il3->Kind() == ILInstr::LoadImm);
+				auto il_loadImm = reinterpret_cast<LoadImmInstr*>(il3.get());
+				RELEASE_ASSERT(il_loadImm->dstReg == il_loadClassId->cidReg);
+				RELEASE_ASSERT(il_loadImm->val == dart::Smi::RawValue(dart::kSmiCid));
+
+				// everything is OK, release all IL to cast to specific IL. Then, put them into a new IL
+				il.release();
+				il2.release();
+				il3.release();
+				auto il_new = new LoadTaggedClassIdMayBeSmiInstr(AddrRange(il_loadImm->Start(), insn.NextAddress()),
+					std::unique_ptr<LoadImmInstr>(il_loadImm), std::unique_ptr<BranchIfSmiInstr>(il_branchIfSmi), 
+					std::unique_ptr<LoadClassIdInstr>(il_loadClassId));
+				fnInfo->il_insns.resize(fnInfo->il_insns.size() - 3);
+				fnInfo->AddInstruction(std::unique_ptr<LoadTaggedClassIdMayBeSmiInstr>(il_new));
+				return insn.ptr();
+			}
+		}
+	}
+	return nullptr;
+}
+
+static cs_insn* processBoxInt64Instr(AnalyzedFnData* fnInfo, AsmInstruction insn)
+{
+	// From BoxInt64Instr::EmitNativeCode()
+	// Note: without compressed pointer, start instruction is "adds"
+	// 0x21c5e8: sbfiz  x0, x2, #1, #0x1f
+	// 0x21c5ec: cmp  x2, x0, asr #1
+	// 0x21c5f0: b.eq  #0x21c5fc
+	// 0x21c5f4: bl  #0x2e5500  # AllocateMintSharedWithoutFPURegsStub
+	// 0x21c5f8: stur  x2, [x0, #7]
+	//   x0 is result object (can be Smi or Mint). x2 is source integer.
+	if (insn.id() == ARM64_INS_SBFIZ && insn.ops[2].imm == dart::kSmiTagSize && insn.ops[3].imm == 31) {
+		auto insn0 = insn.ptr();
+		const auto out_reg = insn.ops[0].reg;
+		const auto in_reg = insn.ops[1].reg;
+
+		++insn;
+		if (insn.id() == ARM64_INS_CMP && insn.ops[0].reg == in_reg && insn.ops[1].reg == out_reg && insn.ops[1].shift.type == ARM64_SFT_ASR && insn.ops[1].shift.value == dart::kSmiTagSize) {
+			// branch if integer value is fit in 31 bits
+			++insn;
+			ASSERT(insn.id() == ARM64_INS_B && insn.cc() == ARM64_CC_EQ);
+			const auto contAddr = insn.ops[0].imm;
+
+			++insn;
+			ASSERT(insn.id() == ARM64_INS_BL);
+			auto stub = fnInfo->app.GetFunction(insn.ops[0].imm);
+			ASSERT(stub->IsStub());
+			const auto stubKind = reinterpret_cast<DartStub*>(stub)->kind;
+			RELEASE_ASSERT(stubKind == DartStub::AllocateMintSharedWithoutFPURegsStub || stubKind == DartStub::AllocateMintSharedWithFPURegsStub);
+
+			++insn;
+			RELEASE_ASSERT(insn.id() == ARM64_INS_STUR);
+			RELEASE_ASSERT(insn.ops[0].reg == in_reg);
+			RELEASE_ASSERT(insn.ops[1].mem.base == out_reg && insn.ops[1].mem.disp == dart::Mint::value_offset() - dart::kHeapObjectTag);
+
+			const auto nextAddr = insn.NextAddress();
+			RELEASE_ASSERT(nextAddr == contAddr);
+
+			const auto objReg = A64::FromCsReg(out_reg);
+			const auto srcReg = A64::FromCsReg(in_reg);
+			fnInfo->AddInstruction(std::make_unique<BoxInt64Instr>(AddrRange(insn0->address, nextAddr), objReg, srcReg));
+			return insn.ptr();
+		}
+		else {
+			--insn;
+		}
+	}
+	return nullptr;
+}
+
+static cs_insn* processLoadInt32FromBoxOrSmiInstr(AnalyzedFnData* fnInfo, AsmInstruction insn)
+{
+	// From UnboxInstr::EmitLoadInt32FromBoxOrSmi(), includes branch if Smi
+	//   output is raw integer, input is Dart object
+	if (insn.id() == ARM64_INS_SBFX && insn.ops[2].imm == dart::kSmiTagSize && insn.ops[3].imm == 31) {
+		auto insn0 = insn.ptr();
+		const auto out_reg = insn.ops[0].reg;
+		const auto in_reg = insn.ops[1].reg;
+		const auto dstReg = A64::FromCsReg(out_reg);
+		const auto srcReg = A64::FromCsReg(in_reg);
+		// TODO: make srcReg type in current function register to be Smi
+
+		++insn;
+		if (insn.id() == ARM64_INS_TBZ && A64::FromCsReg(insn.ops[0].reg) == srcReg && insn.ops[1].imm == dart::kSmiTag) {
+			// if not smi, get raw integer from Mint object
+			// these instructions might not be here because compiler know the value is always be Smi
+			auto cont_addr = insn.ops[2].imm;
+
+			++insn;
+			RELEASE_ASSERT(insn.id() == ARM64_INS_LDUR);
+			RELEASE_ASSERT(insn.ops[0].reg == out_reg);
+			RELEASE_ASSERT(insn.ops[1].mem.base == in_reg && insn.ops[1].mem.disp == dart::Mint::value_offset() - dart::kHeapObjectTag);
+
+			// srcReg item type MUST be Mint
+
+			RELEASE_ASSERT(insn.NextAddress() == cont_addr);
+		}
+		else {
+			--insn;
+			// srcReg object is always Smi
+		}
+
+		fnInfo->AddInstruction(std::make_unique<LoadInt32Instr>(AddrRange(insn0->address, insn.NextAddress()), dstReg, srcReg));
 		return insn.ptr();
 	}
 	return nullptr;
@@ -430,6 +626,12 @@ static const MatcherFn matchers[] = {
 	processCallInstr,
 	processGdtCallInstr,
 	processReturnInstr,
+	processLoadImmInstr,
+	processBranchIfSmiInstr,
+	processLoadClassIdInstr,
+	processBoxInt64Instr,
+	processLoadInt32FromBoxOrSmiInstr,
+	processLoadTaggedClassIdMayBeSmiInstr,
 };
 
 void CodeAnalyzer::asm2il(DartFunction* dartFn, AsmInstructions& asm_insns)
@@ -446,11 +648,28 @@ void CodeAnalyzer::asm2il(DartFunction* dartFn, AsmInstructions& asm_insns)
 		for (auto matcher : matchers) {
 			insn2 = matcher(fnInfo, AsmInstruction(insn));
 			if (insn2) {
-				auto& asm_text = fnInfo->asmTexts.AtAddr(insn->address);
-				if (asm_text.dataType == AsmText::None) {
-					asm_text.dataType = AsmText::Instruction;
-					asm_text.insn = fnInfo->il_insns.back().get();
+				auto il = fnInfo->il_insns.back().get();
+				if (il->Kind() == ILInstr::LoadObject) {
+					auto& asm_text = fnInfo->asmTexts.AtAddr(il->Start());
+					const auto val = reinterpret_cast<LoadObjectInstr*>(il)->GetValue();
+					if (val->Storage().kind == VarStorage::Pool) {
+						// TODO: NativeDouble and NativeInt
+						asm_text.dataType = AsmText::PoolOffset;
+						asm_text.poolOffset = val->Storage().offset;
+					}
+					else if (val->Storage().kind == VarStorage::Immediate) {
+						// can be only boolean. imm as integer or double is in pool offset
+						RELEASE_ASSERT(val->Value()->TypeId() == dart::kBoolCid);
+						asm_text.dataType = AsmText::Boolean;
+						asm_text.boolVal = reinterpret_cast<VarBoolean*>(val->Value().get())->val;
+					}
 				}
+				else if (il->Kind() == ILInstr::Call) {
+					auto& asm_text = fnInfo->asmTexts.AtAddr(il->Start());
+					asm_text.dataType = AsmText::Call;
+					asm_text.callAddress = reinterpret_cast<CallInstr*>(il)->GetCallAddress();
+				}
+
 				break;
 			}
 		}

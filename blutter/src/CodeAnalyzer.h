@@ -10,7 +10,9 @@ struct AsmText {
 	enum DataType : uint8_t {
 		None,
 		ThreadOffset,
-		Instruction,
+		PoolOffset,
+		Boolean,
+		Call,
 	};
 
 	uint64_t addr;
@@ -18,7 +20,9 @@ struct AsmText {
 	uint8_t dataType;
 	union {
 		uint64_t threadOffset;
-		ILInstr* insn;
+		uint64_t poolOffset;
+		bool boolVal;
+		uint64_t callAddress;
 	};
 };
 
