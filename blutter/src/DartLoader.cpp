@@ -45,9 +45,11 @@ static Dart_Isolate load_isolate(const uint8_t* isolate_snapshot_data, const uin
 	flags.snapshot_is_dontneed_safe = true;
 	// dart 3 is always null safety
 	// null safety is enabled by default on Flutter 2.0 with Dart 2.12 (since April 2021)
-	// TODO: FLAG_sound_null_safety from build tool
-	//flags.null_safety = (FLAG_sound_null_safety == kNullSafetyOptionStrong);
-	flags.null_safety = true;
+	auto pos = strstr((const char*)isolate_snapshot_data + 0x30, "null-safety");
+	if (pos == NULL)
+		throw std::runtime_error("Cannot find null-safety text");
+	// "no-null-safety" is set when null safety is disabled. So check for space
+	flags.null_safety = pos[-1] == ' ';
 
 	auto isolate = Dart_CreateIsolateGroup(nullptr, nullptr, isolate_snapshot_data,
 		isolate_snapshot_instructions, &flags,
