@@ -15,6 +15,7 @@ struct VarStorage {
 		Thread,
 		InInstruction, // temporary storage when one assembly instruction is splitted to multiple intermediate instruction
 		Immediate,
+		SmallImm, // array/object offset
 		Call, // return value
 		Field, // access field
 	};
@@ -30,6 +31,7 @@ struct VarStorage {
 	static VarStorage NewPool(int offset) { return VarStorage(Pool, offset); }
 	static VarStorage NewThread(int offset) { return VarStorage(Thread, offset); }
 	static VarStorage NewImmediate() { return VarStorage(Immediate); }
+	static VarStorage NewSmallImm(int val) { return VarStorage(SmallImm, val); }
 	static VarStorage NewCall() { return VarStorage(Call); }
 
 	bool operator==(A64::Register reg) const { return kind == Register && reg == this->reg; }

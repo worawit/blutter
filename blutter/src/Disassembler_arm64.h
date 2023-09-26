@@ -309,10 +309,19 @@ public:
 	AsmInstruction Next() { return AsmInstruction(insn + 1); }
 	AsmInstruction Prev() { return AsmInstruction(insn - 1); }
 
+	AsmInstruction MoveTo(uint64_t addr) {
+		const auto offset = (addr - insn->address) / 4;
+		return AsmInstruction(insn + offset);
+	}
+
 	friend inline bool operator==(const AsmInstruction& lhs, const AsmInstruction& rhs) {
 		return lhs.insn->size == rhs.insn->size && memcmp(lhs.insn->bytes, rhs.insn->bytes, lhs.insn->size) == 0;
 	}
 
+	// libcapstone5 use MOV instead of MOVZ. so, we need this special function.
+	bool IsMovz() {
+		return insn->id == ARM64_INS_MOVZ || (insn->id == ARM64_INS_MOV && op_count() == 2 && ops[1].type == ARM64_OP_IMM);
+	}
 	bool IsBranch(arm64_cc cond = ARM64_CC_INVALID) { return insn->id == ARM64_INS_B && cc() == cond; }
 	bool IsDartArrayLoad() {
 		if (writeback())

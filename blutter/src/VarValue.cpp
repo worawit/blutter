@@ -19,6 +19,8 @@ std::string VarStorage::Name()
 		return std::format("PP_{:x}", offset);
 	case Thread:
 		return std::format("THR_{:x}", offset);
+	case SmallImm:
+		return std::to_string(offset);
 	case InInstruction:
 		return "tmp";
 	default:

@@ -34,6 +34,15 @@ public:
 		LoadTaggedClassIdMayBeSmi,
 		BoxInt64,
 		LoadInt32,
+		AllocateObject,
+		LoadArrayElement,
+		StoreArrayElement,
+		LoadField,
+		StoreField,
+		InitLateStaticField,
+		LoadStaticField,
+		StoreStaticField,
+		WriteBarrier,
 	};
 
 	ILInstr(const ILInstr&) = delete;
@@ -185,7 +194,7 @@ public:
 	GdtCallInstr& operator=(const GdtCallInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("GDT[cid_x0 + {:#x}]()", offset);
+		return std::format("r0 = GDT[cid_x0 + {:#x}]()", offset);
 	}
 
 protected:
@@ -201,8 +210,8 @@ public:
 
 	virtual std::string ToString() {
 		if (fnBase != nullptr)
-			return std::format("{}()", fnBase->Name());
-		return std::format("call {:#x}", addr);
+			return std::format("r0 = {}()", fnBase->Name());
+		return std::format("r0 = call {:#x}", addr);
 	}
 
 	DartFnBase* GetFunction() {
@@ -309,4 +318,199 @@ public:
 
 	A64::Register dstReg;
 	A64::Register srcObjReg;
+};
+
+class AllocateObjectInstr : public ILInstr {
+public:
+	AllocateObjectInstr(AddrRange addrRange, A64::Register dstReg, DartClass& dartCls)
+		: ILInstr(AllocateObject, addrRange), dstReg(dstReg), dartCls(dartCls){}
+	AllocateObjectInstr() = delete;
+	AllocateObjectInstr(AllocateObjectInstr&&) = delete;
+	AllocateObjectInstr& operator=(const AllocateObjectInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = inline_Allocate{}()", A64::GetRegisterName(dstReg), dartCls.Name());
+	}
+
+	A64::Register dstReg;
+	DartClass& dartCls;
+};
+
+struct ArrayOp {
+	enum ArrayType {
+		List,
+		TypedUnknown,
+		TypedSigned,
+		TypedUnsigned,
+		Unknown, // might be Object, List, or TypedUnknown
+	};
+	uint8_t size;
+	bool isLoad; // else isStore
+	ArrayType arrType;
+
+	ArrayOp() : size(0), isLoad(false), arrType(Unknown) {}
+	ArrayOp(uint8_t size, bool isLoad, ArrayType arrType) : size(size), isLoad(isLoad), arrType(arrType) {}
+
+	bool IsArrayOp() const { return size != 0; }
+	uint8_t SizeLog2() const {
+		if (size == 8) return 3;
+		if (size == 4) return 2;
+		if (size == 2) return 1;
+		return 0;
+	}
+	std::string ToString() {
+		switch (arrType) {
+		case List: return std::format("List_{}", size);
+		case TypedUnknown: return std::format("TypeUnknown_{}", size);
+		case TypedSigned: return std::format("TypedSigned_{}", size);
+		case TypedUnsigned: return std::format("TypedUnsigned_{}", size);
+		case Unknown: return std::format("Unknown_{}", size);
+		default: return "";
+		}
+	}
+};
+
+class LoadArrayElementInstr : public ILInstr {
+public:
+	LoadArrayElementInstr(AddrRange addrRange, A64::Register dstReg, A64::Register arrReg, VarStorage idx, ArrayOp arrayOp)
+		: ILInstr(LoadArrayElement, addrRange), dstReg(dstReg), arrReg(arrReg), idx(idx), arrayOp(arrayOp) {}
+	LoadArrayElementInstr() = delete;
+	LoadArrayElementInstr(LoadArrayElementInstr&&) = delete;
+	LoadArrayElementInstr& operator=(const LoadArrayElementInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("ArrayLoad: {} = {}[{}]  ; {}", A64::GetRegisterName(dstReg), A64::GetRegisterName(arrReg), idx.Name(), arrayOp.ToString());
+	}
+
+	A64::Register dstReg;
+	A64::Register arrReg;
+	VarStorage idx;
+	ArrayOp arrayOp;
+};
+
+class StoreArrayElementInstr : public ILInstr {
+public:
+	StoreArrayElementInstr(AddrRange addrRange, A64::Register valReg, A64::Register arrReg, VarStorage idx, ArrayOp arrayOp)
+		: ILInstr(StoreArrayElement, addrRange), valReg(valReg), arrReg(arrReg), idx(idx), arrayOp(arrayOp) {}
+	StoreArrayElementInstr() = delete;
+	StoreArrayElementInstr(StoreArrayElementInstr&&) = delete;
+	StoreArrayElementInstr& operator=(const StoreArrayElementInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("ArrayStore: {}[{}] = {}  ; {}", A64::GetRegisterName(arrReg), idx.Name(), A64::GetRegisterName(valReg), arrayOp.ToString());
+	}
+
+	A64::Register valReg;
+	A64::Register arrReg;
+	VarStorage idx;
+	ArrayOp arrayOp;
+};
+
+class LoadFieldInstr : public ILInstr {
+public:
+	LoadFieldInstr(cs_insn* insn, A64::Register dstReg, A64::Register objReg, uint32_t offset)
+		: ILInstr(LoadField, insn), dstReg(dstReg), objReg(objReg), offset(offset) {}
+	LoadFieldInstr() = delete;
+	LoadFieldInstr(LoadFieldInstr&&) = delete;
+	LoadFieldInstr& operator=(const LoadFieldInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("LoadField: {} = {}->field_{:x}", A64::GetRegisterName(dstReg), A64::GetRegisterName(objReg), offset);
+	}
+
+	A64::Register dstReg;
+	A64::Register objReg;
+	uint32_t offset;
+};
+
+class StoreFieldInstr : public ILInstr {
+public:
+	StoreFieldInstr(AddrRange addrRange, A64::Register valReg, A64::Register objReg, uint32_t offset)
+		: ILInstr(StoreField, addrRange), valReg(valReg), objReg(objReg), offset(offset) {}
+	StoreFieldInstr(cs_insn* insn, A64::Register valReg, A64::Register objReg, uint32_t offset)
+		: ILInstr(StoreField, insn), valReg(valReg), objReg(objReg), offset(offset) {}
+	StoreFieldInstr() = delete;
+	StoreFieldInstr(StoreFieldInstr&&) = delete;
+	StoreFieldInstr& operator=(const StoreFieldInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("StoreField: {}->field_{:x} = {}", A64::GetRegisterName(objReg), offset, A64::GetRegisterName(valReg));
+	}
+
+	A64::Register valReg;
+	A64::Register objReg;
+	uint32_t offset;
+};
+
+class InitLateStaticFieldInstr : public ILInstr {
+public:
+	// TODO: add pool object offset or pointer
+	InitLateStaticFieldInstr(AddrRange addrRange, VarStorage dst, DartField& field)
+		: ILInstr(InitLateStaticField, addrRange), dst(dst), field(field) {}
+	InitLateStaticFieldInstr() = delete;
+	InitLateStaticFieldInstr(InitLateStaticFieldInstr&&) = delete;
+	InitLateStaticFieldInstr& operator=(const InitLateStaticFieldInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = InitLateStaticField({:#x}) // {}", dst.Name(), field.Offset(), field.FullName());
+	}
+
+	std::string ValueExpression() {
+		return field.Name();
+	}
+
+protected:
+	VarStorage dst;
+	DartField& field;
+};
+
+class LoadStaticFieldInstr : public ILInstr {
+public:
+	LoadStaticFieldInstr(AddrRange addrRange, A64::Register dstReg, uint32_t fieldOffset)
+		: ILInstr(LoadStaticField, addrRange), dstReg(dstReg), fieldOffset(fieldOffset) {}
+	LoadStaticFieldInstr() = delete;
+	LoadStaticFieldInstr(LoadStaticFieldInstr&&) = delete;
+	LoadStaticFieldInstr& operator=(const LoadStaticFieldInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = LoadStaticField({:#x})", A64::GetRegisterName(dstReg), fieldOffset);
+	}
+
+protected:
+	A64::Register dstReg;
+	uint32_t fieldOffset;
+};
+
+class StoreStaticFieldInstr : public ILInstr {
+public:
+	StoreStaticFieldInstr(AddrRange addrRange, A64::Register valReg, uint32_t fieldOffset)
+		: ILInstr(LoadStaticField, addrRange), valReg(valReg), fieldOffset(fieldOffset) {}
+	StoreStaticFieldInstr() = delete;
+	StoreStaticFieldInstr(StoreStaticFieldInstr&&) = delete;
+	StoreStaticFieldInstr& operator=(const StoreStaticFieldInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("StoreStaticField({:#x}, {})", fieldOffset, A64::GetRegisterName(valReg));
+	}
+
+protected:
+	A64::Register valReg;
+	uint32_t fieldOffset;
+};
+
+class WriteBarrierInstr : public ILInstr {
+public:
+	WriteBarrierInstr(AddrRange addrRange, A64::Register objReg, A64::Register valReg, bool isArray)
+		: ILInstr(WriteBarrier, addrRange), objReg(objReg), valReg(valReg), isArray(isArray) {}
+	WriteBarrierInstr() = delete;
+	WriteBarrierInstr(WriteBarrierInstr&&) = delete;
+	WriteBarrierInstr& operator=(const WriteBarrierInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{}WriteBarrierInstr(obj = {}, val = {})", isArray ? "Array" : "", A64::GetRegisterName(objReg), A64::GetRegisterName(valReg));
+	}
+
+	A64::Register objReg;
+	A64::Register valReg;
+	bool isArray;
 };
