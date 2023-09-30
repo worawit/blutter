@@ -93,6 +93,8 @@ constexpr arm64_reg CSREG_ALLOCATE_CLOSURE_SCRATCH = ToCapstoneReg(dart::Allocat
 const char* GetCsRegisterName(arm64_reg reg);
 
 inline uint32_t GetCsRegSize(arm64_reg reg) {
+	if (reg >= ARM64_REG_Q0 && reg <= ARM64_REG_Q31)
+		return 16;
 	if ((reg >= ARM64_REG_W0 && reg <= ARM64_REG_W30) || reg == ARM64_REG_WZR)
 		return 4;
 	// assume Xnn regsiter

@@ -73,16 +73,15 @@ public:
 class CodeAnalyzer
 {
 public:
-	CodeAnalyzer(DartApp& app) : app(app), fnInfo(nullptr) {};
+	CodeAnalyzer(DartApp& app) : app(app) {};
 
 	void AnalyzeAll();
 
 private:
 	static AsmTexts convertAsm(AsmInstructions& asm_insns);
+	
+	// implementation is specific to architecture
 	void asm2il(DartFunction* dartFn, AsmInstructions& asm_insns);
 
 	DartApp& app;
-	// temporary current analyzing function. so we do not have to pass it all the time
-	AnalyzedFnData* fnInfo;
 };
-

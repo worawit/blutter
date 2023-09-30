@@ -19,9 +19,9 @@ struct VarStorage {
 		Call, // return value
 		Field, // access field
 	};
-	VarStorage(A64::Register reg) : kind(Register), reg(reg) {}
-	VarStorage(Kind kind) : kind(kind), offset(0) {}
-	VarStorage(Kind kind, int val) : kind(kind), offset(val) {}
+	VarStorage(A64::Register reg) : kind{ Register }, reg{ reg } {}
+	VarStorage(Kind kind) : kind{ kind }, offset{ 0 } {}
+	VarStorage(Kind kind, int val) : kind{ kind }, offset{ val } {}
 
 	static VarStorage NewExpression() { return VarStorage(Expression); }
 	static VarStorage NewRegister(A64::Register reg) { return VarStorage(Register, reg); }

@@ -19,10 +19,10 @@ int main(int argc, char** argv)
 
 		auto& libappPath = args::get(infile);
 
-		std::filesystem::path outDir(args::get(outdir));
+		std::filesystem::path outDir{ args::get(outdir) };
 		std::filesystem::create_directory(outDir);
 
-		DartApp app(libappPath.c_str());
+		DartApp app{ libappPath.c_str() };
 		std::cout << std::format("libapp is loaded at {:#x}\n", app.base());
 		std::cout << std::format("Dart heap at {:#x}\n", app.heap_base());
 
@@ -32,10 +32,10 @@ int main(int argc, char** argv)
 
 		app.EnterScope();
 		std::cout << "Analyzing the application\n";
-		CodeAnalyzer analyzer(app);
+		CodeAnalyzer analyzer{ app };
 		analyzer.AnalyzeAll();
 
-		DartDumper dumper(app);
+		DartDumper dumper{ app };
 		std::cout << "Dumping Object Pool\n";
 		dumper.DumpObjectPool((outDir / "pp.txt").string().c_str());
 		dumper.DumpObjects((outDir / "objs.txt").string().c_str());
@@ -44,7 +44,7 @@ int main(int argc, char** argv)
 		dumper.Dump4Ida(outDir / "ida_script");
 		
 		std::cout << "Generating Frida script\n";
-		FridaWriter fwriter(app);
+		FridaWriter fwriter{ app };
 		fwriter.Create((outDir / "blutter_frida.js").string().c_str());
 
 		app.ExitScope();

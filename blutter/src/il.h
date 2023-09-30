@@ -6,11 +6,11 @@
 struct AsmText;
 
 struct AddrRange {
-	uint64_t start;
-	uint64_t end;
+	uint64_t start{ 0 };
+	uint64_t end{ 0 };
 
-	AddrRange() : start(0), end(0) {}
-	AddrRange(uint64_t start, uint64_t end) : start(start), end(end) {}
+	AddrRange() = default;
+	AddrRange(uint64_t start, uint64_t end) : start{ start }, end{ end } {}
 
 	bool Has(uint64_t addr) { return addr >= start && addr < end; }
 };
@@ -26,6 +26,8 @@ public:
 		LoadObject,
 		LoadImm,
 		DecompressPointer,
+		SaveRegister,
+		RestoreRegister,
 		GdtCall,
 		Call,
 		Return,
@@ -184,6 +186,36 @@ public:
 
 protected:
 	VarStorage dst;
+};
+
+class SaveRegisterInstr : public ILInstr {
+public:
+	SaveRegisterInstr(cs_insn* insn, A64::Register srcReg) : ILInstr(SaveRegister, insn), srcReg(srcReg) {}
+	SaveRegisterInstr() = delete;
+	SaveRegisterInstr(SaveRegisterInstr&&) = delete;
+	SaveRegisterInstr& operator=(const SaveRegisterInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::string("SaveReg ") + A64::GetRegisterName(srcReg);
+	}
+
+protected:
+	A64::Register srcReg;
+};
+
+class RestoreRegisterInstr : public ILInstr {
+public:
+	RestoreRegisterInstr(cs_insn* insn, A64::Register dstReg) : ILInstr(RestoreRegister, insn), dstReg(dstReg) {}
+	RestoreRegisterInstr() = delete;
+	RestoreRegisterInstr(RestoreRegisterInstr&&) = delete;
+	RestoreRegisterInstr& operator=(const RestoreRegisterInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::string("RestoreReg ") + A64::GetRegisterName(dstReg);
+	}
+
+protected:
+	A64::Register dstReg;
 };
 
 class GdtCallInstr : public ILInstr {
