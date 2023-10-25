@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -18,6 +19,17 @@ BUILD_DIR = os.path.join(SCRIPT_DIR, 'build')
 
 #DART_GIT_URL = 'https://dart.googlesource.com/sdk.git'
 DART_GIT_URL = 'https://github.com/dart-lang/sdk.git'
+
+imp_replace_snippet = """import importlib.util
+import importlib.machinery
+
+def load_source(modname, filename):
+    loader = importlib.machinery.SourceFileLoader(modname, filename)
+    spec = importlib.util.spec_from_file_location(modname, filename, loader=loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+"""
 
 def checkout_dart(ver):
     clonedir = os.path.join(SDK_DIR, 'v'+ver)
@@ -45,7 +57,23 @@ def checkout_dart(ver):
                 elif entry.is_dir() and entry.name == '.git':
                     # should ".git" directory be removed?
                     pass
-        # make version
+        # if running with Python 3.12, tools/utils.py should be patched to replace imp module with importlib
+        # due to its remotion as stated in: https://docs.python.org/3.12/whatsnew/3.12.html#imp
+        if sys.version_info[:2] == (3, 12):
+            utils_path = os.path.join(clonedir, "tools/utils.py")
+            if os.path.exists(utils_path):
+                with open(utils_path, "r+") as f:
+                    content = f.read()
+                    if "import imp\n" in content:
+                        content = content.replace("import imp\n", imp_replace_snippet).replace("imp.load_source", "load_source")
+                    # replace invalid escape sequences strings with raw strings to avoid SyntaxWarning
+                    # in future Python versions this warning will raise an error instead of warning
+                    # as stated in: https://docs.python.org/3/whatsnew/3.12.html#other-language-changes
+                    content = re.sub(r"' awk (.*)'", r"r' awk \1'", content).replace("match_against('", "match_against(r'").replace("re.search('", "re.search(r'")
+                    f.seek(0)
+                    f.truncate()
+                    f.write(content)
+            # make version
         subprocess.run([sys.executable, 'tools/make_version.py', '--output', 'runtime/vm/version.cc', '--input', 'runtime/vm/version_in.cc'], cwd=clonedir, check=True)
     
     return clonedir
