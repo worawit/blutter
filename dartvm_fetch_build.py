@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 import stat
 import subprocess
@@ -69,11 +68,11 @@ def checkout_dart(ver):
                     # replace invalid escape sequences strings with raw strings to avoid SyntaxWarning
                     # in future Python versions this warning will raise an error instead of warning
                     # as stated in: https://docs.python.org/3/whatsnew/3.12.html#other-language-changes
-                    content = re.sub(r"' awk (.*)'", r"r' awk \1'", content).replace("match_against('", "match_against(r'").replace("re.search('", "re.search(r'")
+                    content = content.replace(" ' awk ", " r' awk ").replace("match_against('", "match_against(r'").replace("re.search('", "re.search(r'")
                     f.seek(0)
                     f.truncate()
                     f.write(content)
-            # make version
+        # make version
         subprocess.run([sys.executable, 'tools/make_version.py', '--output', 'runtime/vm/version.cc', '--input', 'runtime/vm/version_in.cc'], cwd=clonedir, check=True)
     
     return clonedir
