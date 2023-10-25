@@ -59,7 +59,7 @@ def checkout_dart(ver):
                     pass
         # if running with Python 3.12, tools/utils.py should be patched to replace imp module with importlib
         # due to its remotion as stated in: https://docs.python.org/3.12/whatsnew/3.12.html#imp
-        if sys.version_info[:2] == (3, 12):
+        if sys.version_info[:2] >= (3, 12):
             utils_path = os.path.join(clonedir, "tools/utils.py")
             if os.path.exists(utils_path):
                 with open(utils_path, "r+") as f:
