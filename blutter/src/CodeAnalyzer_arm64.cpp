@@ -732,14 +732,33 @@ ILResult FunctionAnalyzer::processLoadFieldTableInstr(AsmInstruction insn)
 					INSN_ASSERT(objPoolInstr.item->Value()->RawTypeId() == dart::kFieldCid);
 					auto& dartField = reinterpret_cast<VarField*>(objPoolInstr.item->Value().get())->field;
 					INSN_ASSERT(dartField.Offset() == field_offset);
-
 					insn += objPoolInstr.insCnt;
-					INSN_ASSERT(insn.id() == ARM64_INS_BL);
 
-					auto dartFn = app.GetFunction(insn.ops[0].imm);
-					ASSERT(dartFn->IsStub());
-					const auto stubKind = reinterpret_cast<DartStub*>(dartFn)->kind;
-					INSN_ASSERT(stubKind == DartStub::InitLateStaticFieldStub || stubKind == DartStub::InitLateFinalStaticFieldStub);
+					// GenerateStubCall()
+					// - EmitCallToStub() might be GenerateUnRelocatedPcRelativeCall() or BranchLink()
+					if (insn.id() == ARM64_INS_BL) {
+						auto dartFn = app.GetFunction(insn.ops[0].imm);
+						ASSERT(dartFn->IsStub());
+						const auto stubKind = reinterpret_cast<DartStub*>(dartFn)->kind;
+						INSN_ASSERT(stubKind == DartStub::InitLateStaticFieldStub || stubKind == DartStub::InitLateFinalStaticFieldStub);
+					}
+					else {
+						// BranchLink()
+						const auto objPoolInstr = processGetObjectPoolInstruction(app, insn);
+						INSN_ASSERT(objPoolInstr.dstReg == A64::FromDartReg(dart::CODE_REG));
+						// TODO: what kind of object is loaded?
+						insn += objPoolInstr.insCnt;
+
+						INSN_ASSERT(insn.id() == ARM64_INS_LDR);
+						INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
+						INSN_ASSERT(insn.ops[1].mem.base == ToCapstoneReg(dart::CODE_REG));
+						INSN_ASSERT(insn.ops[1].mem.disp == dart::Code::entry_point_offset(dart::CodeEntryKind::kNormal));
+						++insn;
+
+						INSN_ASSERT(insn.id() == ARM64_INS_BLR);
+						INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
+					}
+
 
 					INSN_ASSERT(insn.NextAddress() == cont_addr);
 
@@ -1298,12 +1317,31 @@ ILWBResult FunctionAnalyzer::processWriteBarrier(AsmInstruction insn)
 	}
 
 	// TODO: call instruction is not processed. AsmText cannot show the stub name.
-	INSN_ASSERT(insn.id() == ARM64_INS_BL);
-	auto stub = app.GetFunction(insn.ops[0].imm);
-	INSN_ASSERT(stub->IsStub());
-	const auto stubKind = reinterpret_cast<DartStub*>(stub)->kind;
-	INSN_ASSERT(stubKind == DartStub::WriteBarrierWrappersStub || stubKind == DartStub::ArrayWriteBarrierStub);
-	bool isArray = stubKind == DartStub::ArrayWriteBarrierStub;
+	bool isArray;
+	if (insn.id() == ARM64_INS_BL) {
+		auto stub = app.GetFunction(insn.ops[0].imm);
+		INSN_ASSERT(stub->IsStub());
+		const auto stubKind = reinterpret_cast<DartStub*>(stub)->kind;
+		INSN_ASSERT(stubKind == DartStub::WriteBarrierWrappersStub || stubKind == DartStub::ArrayWriteBarrierStub);
+		isArray = stubKind == DartStub::ArrayWriteBarrierStub;
+	}
+	else {
+		// from generate_invoke_write_barrier_wrapper_ lambda function
+		// - write_barrier_wrappers_thread_offset(reg) in thread.h calculates thread offset from a register
+		// Call(Address target) always use LR register
+		INSN_ASSERT(insn.id() == ARM64_INS_LDR);
+		INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
+		INSN_ASSERT(insn.ops[1].mem.base == CSREG_DART_THR);
+		const auto existed = std::find(std::begin(AOT_Thread_write_barrier_wrappers_thread_offset), 
+			std::end(AOT_Thread_write_barrier_wrappers_thread_offset), insn.ops[1].mem.disp) != std::end(AOT_Thread_write_barrier_wrappers_thread_offset);
+		INSN_ASSERT(existed);
+		const auto epReg = insn.ops[0].reg;
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_BLR);
+		INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
+		isArray = false;
+	}
 
 	if (spill_lr) {
 		++insn;
@@ -1604,6 +1642,10 @@ void FunctionAnalyzer::asm2il()
 				++ins;
 			}
 			std::cerr << std::format("  * {:#x}: {} {}\n", ins->address, &ins->mnemonic[0], &ins->op_str[0]);
+			if (ins->address + ins->size < fnInfo->dartFn.AddressEnd()) {
+				++ins;
+				std::cerr << std::format("    {:#x}: {} {}\n", ins->address, &ins->mnemonic[0], &ins->op_str[0]);
+			}
 		}
 
 		if (insn2 == nullptr) {
