@@ -45,6 +45,7 @@ public:
 		LoadStaticField,
 		StoreStaticField,
 		WriteBarrier,
+		TestType,
 	};
 
 	ILInstr(const ILInstr&) = delete;
@@ -545,4 +546,20 @@ public:
 	A64::Register objReg;
 	A64::Register valReg;
 	bool isArray;
+};
+
+class TestTypeInstr : public ILInstr {
+public:
+	TestTypeInstr(AddrRange addrRange, A64::Register srcReg, std::string typeName)
+		: ILInstr(TestType, addrRange), srcReg(srcReg), typeName(std::move(typeName)) {}
+	TestTypeInstr() = delete;
+	TestTypeInstr(TestTypeInstr&&) = delete;
+	TestTypeInstr& operator=(const TestTypeInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} as {}", A64::GetRegisterName(srcReg), typeName);
+	}
+
+	A64::Register srcReg;
+	std::string typeName;
 };

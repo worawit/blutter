@@ -59,6 +59,14 @@ public:
 		il_insns.push_back(std::move(insn));
 	}
 
+	ILInstr* LastIL() {
+		return il_insns.back().get();
+	}
+
+	void RemoveLastIL() {
+		il_insns.pop_back();
+	}
+
 	DartApp& app;
 	DartFunction& dartFn;
 	AsmTexts asmTexts;
