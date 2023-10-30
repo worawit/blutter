@@ -749,10 +749,10 @@ ILResult FunctionAnalyzer::processLoadFieldTableInstr(AsmInstruction insn)
 						// TODO: what kind of object is loaded?
 						insn += objPoolInstr.insCnt;
 
-						INSN_ASSERT(insn.id() == ARM64_INS_LDR);
+						INSN_ASSERT(insn.id() == ARM64_INS_LDUR);
 						INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
 						INSN_ASSERT(insn.ops[1].mem.base == ToCapstoneReg(dart::CODE_REG));
-						INSN_ASSERT(insn.ops[1].mem.disp == dart::Code::entry_point_offset(dart::CodeEntryKind::kNormal));
+						INSN_ASSERT(insn.ops[1].mem.disp == dart::Code::entry_point_offset(dart::CodeEntryKind::kNormal) - dart::kHeapObjectTag);
 						++insn;
 
 						INSN_ASSERT(insn.id() == ARM64_INS_BLR);
