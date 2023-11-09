@@ -113,6 +113,9 @@ void DartDumper::Dump2Json(const char* filename)
     }
     data["stubs"] = stubs_json;
 
+	// Can't find of a better name to explain what it does
+	data["thread_object_pool_structs"] = applyStruct2Json();
+
     std::ofstream ofs(filename);
     ofs << data.dump(4);
 }
@@ -253,6 +256,56 @@ std::vector<std::pair<intptr_t, std::string>> DartDumper::DumpStructHeaderFile(s
 
 	return comments;
 }
+
+
+nlohmann::ordered_json DartDumper::applyStruct2Json()
+{
+
+    nlohmann::ordered_json output_json = nlohmann::ordered_json::array();
+
+	Disassembler disasmer;
+    for (auto lib : app.libs)
+    {
+        if (lib->isInternal)
+            continue;
+
+        for (auto dartCls : lib->classes)
+        {
+            for (auto dartFn : dartCls->Functions())
+            {
+                if (dartFn->PayloadSize() == 0)
+                    continue;
+
+                auto insns = disasmer.Disasm((uint8_t*)dartFn->PayloadAddress() + app.base(), dartFn->PayloadSize(), dartFn->Address());
+
+                for (uint32_t i = 0; i < insns.Count(); i++)
+                {
+                    auto insn = insns.At(i);
+                    const auto op_count = insn.op_count();
+
+                    for (uint8_t j = 0; j < op_count; j++)
+                    {
+                        auto reg = ARM64_REG_INVALID;
+                        if (insn.ops[j].type == ARM64_OP_REG)
+                            reg = insn.ops[j].reg;
+                        else if (insn.ops[j].type == ARM64_OP_MEM)
+                            reg = insn.ops[j].mem.base;
+
+                        nlohmann::ordered_json instruction_json;
+                        instruction_json["address"] = insn.address();
+                        instruction_json["op_index"] = j;
+                        instruction_json["register"] = reg;
+                        output_json.push_back(instruction_json);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return output_json;
+}
+
 
 void DartDumper::applyStruct4Ida(std::ostream& of)
 {

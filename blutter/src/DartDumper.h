@@ -2,6 +2,8 @@
 #include "DartApp.h"
 #include <filesystem>
 
+#include <nlohmann/json.hpp>
+
 class DartDumper
 {
 public:
@@ -25,6 +27,8 @@ private:
 
 	std::string dumpInstance(dart::Object& obj, bool simpleForm = false, bool nestedObj = false, int depth = 0);
 	std::string dumpInstanceFields(dart::Object& obj, DartClass& dartCls, intptr_t ptr, intptr_t offset, bool simpleForm = false, bool nestedObj = false, int depth = 0);
+
+	nlohmann::ordered_json applyStruct2Json();
 
 	void applyStruct4Ida(std::ostream& of);
 
