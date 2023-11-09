@@ -7,6 +7,8 @@ class DartDumper
 public:
 	DartDumper(DartApp& app) : app(app) {};
 
+	void Dump2Json(const char* filename);
+
 	void Dump4Ida(std::filesystem::path outDir);
 
 	std::vector<std::pair<intptr_t, std::string>> DumpStructHeaderFile(std::string outFile);

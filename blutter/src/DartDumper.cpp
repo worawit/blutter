@@ -11,6 +11,8 @@
 #include "DartThreadInfo.h"
 #include "CodeAnalyzer.h"
 
+#include <nlohmann/json.hpp>
+
 // TODO: move arm64 specific code to *_arm64 file
 
 static std::unordered_map<std::string, std::string> OP_MAP {
@@ -68,6 +70,51 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 	}
 
 	return fnName;
+}
+
+void DartDumper::Dump2Json(const char* filename)
+{
+    nlohmann::ordered_json data;
+    nlohmann::ordered_json libs_json = nlohmann::ordered_json::array();
+
+    for (auto lib : app.libs) {
+        nlohmann::ordered_json lib_json;
+        lib_json["name"] = lib->GetName();
+        nlohmann::ordered_json classes_json = nlohmann::ordered_json::array();
+
+        for (auto cls : lib->classes) {
+            nlohmann::ordered_json cls_json;
+            cls_json["name"] = cls->Name();
+            nlohmann::ordered_json functions_json = nlohmann::ordered_json::array();
+
+            for (auto dartFn : cls->Functions()) {
+                nlohmann::ordered_json fn_json;
+                fn_json["address"] = dartFn->Address();
+                fn_json["size"] = dartFn->Size();
+                fn_json["name"] = getFunctionName4Ida(*dartFn, cls->Name());
+                functions_json.push_back(fn_json);
+            }
+            cls_json["functions"] = functions_json;
+            classes_json.push_back(cls_json);
+        }
+        lib_json["classes"] = classes_json;
+        libs_json.push_back(lib_json);
+    }
+    data["libraries"] = libs_json;
+
+    nlohmann::ordered_json stubs_json = nlohmann::ordered_json::array();
+    for (auto& item : app.stubs) {
+        auto stub = item.second;
+        nlohmann::ordered_json stub_json;
+        stub_json["name"] = stub->FullName();
+        stub_json["address"] = stub->Address();
+        stub_json["size"] = stub->Size();
+        stubs_json.push_back(stub_json);
+    }
+    data["stubs"] = stubs_json;
+
+    std::ofstream ofs(filename);
+    ofs << data.dump(4);
 }
 
 void DartDumper::Dump4Ida(std::filesystem::path outDir)
