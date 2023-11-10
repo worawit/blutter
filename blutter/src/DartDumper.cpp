@@ -96,14 +96,21 @@ void DartDumper::Class2Json(const char* filename)
 				auto name = dartFn->Name();
 				auto address = dartFn->Address();
 				auto size = dartFn->Size();
-				auto has_morphic_code = dartFn->HasMorphicCode();
 
 				nlohmann::ordered_json fn_json;
 
-				fn_json["name"] = name;
+				nlohmann::ordered_json fn_json_morphic;
+
+				fn_json["name"] = std::format("{}_{:x}", name, address);
 				fn_json["address"] = address;
 				fn_json["size"] = size;
-				fn_json["has_morphic_code"] = has_morphic_code;
+				fn_json["payload_address"] = nullptr;
+				fn_json["morphic_address"] = nullptr;
+				if (dartFn->HasMorphicCode())
+				{
+					fn_json["payload_address"] = dartFn->PayloadAddress();
+					fn_json["morphic_address"] = dartFn->MonomorphicAddress();
+				}
 
 				functions_json.push_back(fn_json);
 			}
@@ -127,10 +134,11 @@ void DartDumper::Stubs2Json(const char* filename)
 		auto stub = item.second;
 		const auto ep = stub->Address();
 		auto name = stub->FullName();
+
 		auto size = stub->Size();
 
 		nlohmann::ordered_json stub_json;
-		stub_json["name"] = name;
+		stub_json["name"] = std::format("{}_{:x}", name, ep);
 		stub_json["address"] = ep;
 		stub_json["size"] = size;
 		stubs_json.push_back(stub_json);
