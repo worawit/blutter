@@ -41,7 +41,7 @@ int main(int argc, char** argv)
 		dumper.DumpObjects((outDir / "objs.txt").string().c_str());
 		std::cout << "Generating application assemblies\n";
 		dumper.DumpCode((outDir / "asm").string().c_str());
-		dumper.Dump2Json((outDir / "data.json").string().c_str());
+		dumper.Dump2Json((outDir / "data_json").string().c_str());
 		dumper.Dump4Ida(outDir / "ida_script");
 		
 		std::cout << "Generating Frida script\n";
