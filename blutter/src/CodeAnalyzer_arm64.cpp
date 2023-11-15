@@ -82,6 +82,13 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 		case dart::kConstSetCid:
 			// TODO: set
 			return new VarExpression(std::format("{}", obj.ToCString()), (int32_t)obj.GetClassId());
+#ifdef HAS_RECORD_TYPE
+		case dart::kRecordCid: {
+			// temporary expression for Record object (need full object for analysis)
+			//const auto& rec = dart::Record::Cast(obj);
+			return new VarExpression(std::format("{}", obj.ToCString()), (int32_t)obj.GetClassId());
+		}
+#endif
 		case dart::kTypeParametersCid:
 			throw std::runtime_error("Type parameter in Object Pool");
 		case dart::kTypeCid:

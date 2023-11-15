@@ -522,6 +522,23 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		}
 		return std::format("List{}({}) [{}]", typeArg->ToString(), arr_len, ss.str());
 	}
+#ifdef HAS_RECORD_TYPE
+	case dart::kRecordCid: {
+		const auto& record = dart::Record::Cast(obj);
+		std::ostringstream ss;
+		const auto type = app.typeDb->FindOrAdd(record.GetRecordType());
+		ss << "Record" << type->ToString() << " = (";
+		auto& field = dart::Object::Handle();
+		const auto num_fields = record.num_fields();
+		for (intptr_t i = 0; i < num_fields; i++) {
+			if (i != 0) ss << ", ";
+			field = record.FieldAt(i);
+			ss << ObjectToString(field, simpleForm, nestedObj, depth + 1);
+		}
+		ss << ")";
+		return ss.str();
+	}
+#endif
 	case dart::kTypeArgumentsCid:
 		return "TypeArguments: " + app.typeDb->FindOrAdd(dart::TypeArguments::RawCast(obj.ptr()))->ToString();
 	case dart::kTypeCid:
@@ -588,6 +605,20 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		ss << " }";
 		return ss.str();
 	}
+	case dart::kLibraryPrefixCid: {
+		const auto& libPrefix = dart::LibraryPrefix::Cast(obj);
+		const auto& name = dart::String::Handle(libPrefix.name());
+		RELEASE_ASSERT(libPrefix.num_imports() == 1);
+		// don't know what impoter is
+		//const auto& importer = dart::Library::Handle(libPrefix.importer());
+		const auto& imports = dart::Array::Handle(libPrefix.imports());
+		const auto& importObj = dart::Object::Handle(imports.At(0));
+		RELEASE_ASSERT(importObj.GetClassId() == dart::kNamespaceCid);
+		const auto& ns = dart::Namespace::Cast(importObj);
+		const auto& lib = dart::Library::Handle(ns.target());
+		const auto& libName = dart::String::Handle(lib.url());
+		return std::format("LibraryPrefix: {}, target lib: {} ({})", name.ToCString(), libName.ToCString(), lib.toplevel_class().untag()->id());
+	}
 	case dart::kInstanceCid:
 		return std::format("Obj!Object@{:x}", (uint32_t)(intptr_t)obj.ptr());
 	// TODO: enum subclass
@@ -597,7 +628,7 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 	ASSERT(obj.IsInstance());
 
 	if (cid < dart::kNumPredefinedCids) {
-		FATAL("Unhandle internal class");
+		FATAL("Unhandle internal class %s (%ld)", app.GetClass(cid)->Name().c_str(), cid);
 	}
 
 	// TODO: print library and package prefix
