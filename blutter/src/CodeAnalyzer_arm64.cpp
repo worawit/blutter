@@ -580,6 +580,9 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 						++insn;
 					}
 
+					// replace the valReg of previous parameter if found
+					fnInfo->params.movValReg(A64::Register{}, valReg);
+					// add parameter
 					fnInfo->params.params.push_back(FnParamInfo{ valReg, local_offset });
 				}
 
@@ -602,7 +605,6 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 				// load all default values
 				int i = 0;
 				std::vector<int64_t> missingBranchTargets;
-				std::vector<FnParamInfo> optParams;
 				while (insn.id() == ARM64_INS_CMP) {
 					INSN_ASSERT(ToCapstoneReg(insn.ops[0].reg) == paramShiftIdxReg);
 					INSN_ASSERT(insn.ops[1].imm == (i + 1) << 1);
@@ -637,19 +639,19 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 						//INSN_ASSERT(insn.ops[0].reg == tmpReg); // ops[0] might be decimal
 						INSN_ASSERT(insn.ops[1].mem.base == tmpReg && insn.ops[1].mem.disp == 8 * (1 - i));
 						const auto valReg = insn.ops[0].reg;
-						optParams.push_back(FnParamInfo{ A64::Register{ valReg } });
+						fnInfo->params.params.push_back(FnParamInfo{ A64::Register{ valReg } });
 						++insn;
 
 						// the parameter value might be saved to stack as if it is a local variable but with fixed negative offset from FP
 						if (insn.id() == ARM64_INS_STUR) {
 							INSN_ASSERT(insn.ops[0].reg == valReg);
 							INSN_ASSERT(insn.ops[1].mem.base == CSREG_DART_FP);
-							optParams.back().localOffset = insn.ops[1].mem.disp;
+							fnInfo->params.params.back().localOffset = insn.ops[1].mem.disp;
 							++insn;
 						}
 					}
 					else {
-						optParams.push_back(FnParamInfo{ A64::Register{} });
+						fnInfo->params.params.push_back(FnParamInfo{ A64::Register{} });
 					}
 
 					++i;
@@ -663,10 +665,10 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 						if (!dstReg.IsSet())
 							break;
 
-						auto itr = std::find_if(optParams.begin(), optParams.end(), [&](auto const& param) { return param.valReg == srcReg; });
-						INSN_ASSERT(itr != optParams.end());
-						itr->type = app.TypeDb()->Get(dstReg.IsDecimal() ? dart::kDoubleCid : app.DartIntCid());
-						itr->valReg = dstReg;
+						auto param = fnInfo->params.findValReg(srcReg);
+						INSN_ASSERT(param != nullptr);
+						param->type = app.TypeDb()->Get(dstReg.IsDecimal() ? dart::kDoubleCid : app.DartIntCid());
+						param->valReg = dstReg;
 					}
 
 					// might be move to another register
@@ -674,9 +676,8 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 						INSN_ASSERT(insn.id() == ARM64_INS_MOV);
 						INSN_ASSERT(insn.ops[0].type == ARM64_OP_REG && insn.ops[1].type == ARM64_OP_REG);
 						const auto srcReg = A64::Register{ insn.ops[1].reg };
-						auto itr = std::find_if(optParams.begin(), optParams.end(), [&](auto const& param) { return param.valReg == srcReg; });
-						INSN_ASSERT(itr != optParams.end());
-						itr->valReg = A64::Register{ insn.ops[0].reg };
+						auto found = fnInfo->params.movValReg(A64::Register{ insn.ops[0].reg }, srcReg);
+						INSN_ASSERT(found);
 						++insn;
 					}
 					const auto storingBranchTarget = insn.ops[0].imm;
@@ -714,26 +715,24 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 						}
 					}
 
+					INSN_ASSERT(optParams2.size() <= fnInfo->params.params.size() - fnInfo->params.numFixedParam);
+					// Note: optParams2 MUST be ordered same as previous steps but some named parameter might have no default value (required or unused)
+					for (int i = fnInfo->params.numFixedParam, j = 0; i < fnInfo->params.params.size(); i++) {
+						if (fnInfo->params.params[i].valReg.IsSet()) {
+							ASSERT(fnInfo->params.params[i].valReg == optParams2[j].valReg);
+							INSN_ASSERT(j < optParams2.size());
+							fnInfo->params.params[i].val = optParams2[j].val;
+							j++;
+						}
+					}
+
 					while (insn.id() == ARM64_INS_STUR) {
 						INSN_ASSERT(insn.ops[1].mem.base == CSREG_DART_FP);
 						const auto srcReg = A64::Register{ insn.ops[0].reg };
-						auto itr = std::find_if(optParams2.begin(), optParams2.end(), [&](auto const& param) { return param.valReg == srcReg; });
-						INSN_ASSERT(itr != optParams2.end());
-						itr->localOffset = insn.ops[1].mem.disp;
+						auto param = fnInfo->params.findValReg(srcReg);
+						INSN_ASSERT(param != nullptr);
+						param->localOffset = insn.ops[1].mem.disp;
 						++insn;
-					}
-
-					INSN_ASSERT(optParams.size() >= optParams2.size());
-					for (auto i = 0, j = 0; i < optParams.size(); i++) {
-						if (optParams[i].valReg.IsSet()) {
-							ASSERT(optParams[i].valReg == optParams2[j].valReg);
-							INSN_ASSERT(j < optParams2.size());
-							fnInfo->params.params.push_back(FnParamInfo{ optParams[i].valReg, optParams2[j].localOffset, optParams[i].type, "", optParams2[j].val });
-							j++;
-						}
-						else {
-							fnInfo->params.params.push_back(FnParamInfo{ A64::Register{} });
-						}
 					}
 				}
 
@@ -788,6 +787,14 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 							INSN_ASSERT(insn.id() == ARM64_INS_LSL);
 							INSN_ASSERT(A64::Register{ insn.ops[1].reg } == currParamPosReg);
 							INSN_ASSERT(insn.ops[2].imm == 1);
+							currParamPosSmiReg = insn.ops[0].reg;
+							++insn;
+						}
+
+						// weird case. add 1 to currParamPosSmiReg. maybe this named parameter is not used and skip it.
+						if (insn.id() == ARM64_INS_ADD) {
+							INSN_ASSERT(A64::Register{ insn.ops[1].reg } == currParamPosSmiReg);
+							INSN_ASSERT(insn.ops[2].imm == 2); // tagged value of 1
 							currParamPosSmiReg = insn.ops[0].reg;
 							++insn;
 						}
@@ -958,44 +965,48 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 						}
 					}
 
-					const auto movRegValCheck = [&] {
-						if (argIdxReg != ARM64_REG_INVALID) {
-							if (insn.id() == ARM64_INS_MOV && A64::Register{ insn.ops[1].reg } == fnInfo->params.params.back().valReg) {
-								// move register
-								fnInfo->params.params.back().valReg = A64::Register{ insn.ops[0].reg };
-								++insn;
-							}
-						}
-					};
-
-					// paramPos Smi to native int
-					if (!isRequired && nameParamCnt) {
-						if (!isLastName) {
-							// Smi to native
+					if (!isRequired) {
+						// Smi to native. only non first and last name do it
+						if (nameParamCnt && !isLastName) {
 							// 0x412924: sbfx  x5, x2, #1, #0x1f
-							// 0x412928: mov  x2, x5
-							INSN_ASSERT(insn.id() == ARM64_INS_SBFX);
-							INSN_ASSERT(A64::Register{ insn.ops[1].reg } == currParamPosSmiReg);
-							INSN_ASSERT(insn.ops[2].imm == 1 && insn.ops[3].imm == 0x1f);
-							const auto tmpReg = insn.ops[0].reg;
-							++insn;
-
-							// move value register might be here
-							movRegValCheck();
-
-							if (insn.id() == ARM64_INS_MOV && insn.ops[1].reg == tmpReg) {
-								//INSN_ASSERT(A64::Register{ insn.ops[0].reg } == currParamPosReg);
+							if (insn.id() == ARM64_INS_SBFX) {
+								INSN_ASSERT(A64::Register{ insn.ops[1].reg } == currParamPosSmiReg);
+								INSN_ASSERT(insn.ops[2].imm == 1 && insn.ops[3].imm == 0x1f);
 								currParamPosReg = insn.ops[0].reg;
 								++insn;
-							}
-							else {
-								currParamPosReg = tmpReg;
 							}
 						}
 					}
 
-					movRegValCheck();
+					// doing loop here because the moving value to another register can be in any order and multiple time
+					while (insn.id() == ARM64_INS_MOV && insn.ops[1].type == ARM64_OP_REG && insn.ops[1].reg != CSREG_DART_NULL) {
+						const auto srcReg = A64::Register{ insn.ops[1].reg };
 
+						if (!isRequired && nameParamCnt && !isLastName) {
+							// change param pos register
+							if (srcReg == currParamPosReg) {
+								currParamPosReg = insn.ops[0].reg;
+								++insn;
+								continue;
+							}
+						}
+
+						if (argIdxReg != ARM64_REG_INVALID) {
+							// move register value to another register
+							if (srcReg == fnInfo->params.params.back().valReg) {
+								fnInfo->params.params.back().valReg = A64::Register{ insn.ops[0].reg };
+								++insn;
+								continue;
+							}
+						}
+
+						// not register for this param. check for all previous parameters.
+						bool found = fnInfo->params.movValReg(A64::Register{ insn.ops[0].reg }, srcReg);
+						INSN_ASSERT(found);
+						++insn;
+					}
+
+					// first param name, set the param pos value
 					if (!nameParamCnt) {
 						if (insn.IsMovz() && insn.ops[1].imm == 1) {
 							currParamPosReg = insn.ops[0].reg;
@@ -1015,9 +1026,13 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 							++insn;
 						}
 
-						// param pos register is changed
-						// TODO: save the previous register of currParamPosReg
-						if (nameParamCnt && !isLastName && insn.id() == ARM64_INS_MOV && A64::Register{ insn.ops[0].reg } == currParamPosReg) {
+						while (insn.id() == ARM64_INS_MOV && insn.ops[1].type == ARM64_OP_REG && insn.ops[1].reg != CSREG_DART_NULL) {
+							// param pos register is changed
+							if (nameParamCnt && !isLastName && insn.id() == ARM64_INS_MOV && A64::Register{ insn.ops[0].reg } == currParamPosReg) {
+								++insn;
+								continue;
+							}
+							// other moving reg is this branch should be same as loading param value branch
 							++insn;
 						}
 
@@ -1404,36 +1419,38 @@ ILResult FunctionAnalyzer::processInstanceofNoTypeArgumentInstr(AsmInstruction i
 		INSN_ASSERT(ilBranch->objReg == A64::Register{ dart::TypeTestABI::kInstanceReg });
 		const auto done_addr = ilBranch->branchAddr;
 
+		// int and num type are extracted for quick check. other object just use stub for checking.
+		intptr_t typeCheckCid = 0;
 		auto il_res2 = processLoadClassIdInstr(insn);
-		INSN_ASSERT(il_res2.lastIns);
-		insn = il_res2.lastIns + 1;
-		const auto ilLoadCid = il_res2.get<LoadClassIdInstr>();
-		INSN_ASSERT(ilLoadCid->objReg == A64::Register{ dart::TypeTestABI::kInstanceReg });
-		INSN_ASSERT(ilLoadCid->cidReg == A64::Register{ dart::TypeTestABI::kScratchReg });
+		if (il_res2.lastIns) {
+			insn = il_res2.lastIns + 1;
+			const auto ilLoadCid = il_res2.get<LoadClassIdInstr>();
+			INSN_ASSERT(ilLoadCid->objReg == A64::Register{ dart::TypeTestABI::kInstanceReg });
+			INSN_ASSERT(ilLoadCid->cidReg == A64::Register{ dart::TypeTestABI::kScratchReg });
 
-		INSN_ASSERT(insn.id() == ARM64_INS_SUB);
-		INSN_ASSERT(insn.ops[0].reg == ToCapstoneReg(dart::TypeTestABI::kScratchReg));
-		INSN_ASSERT(insn.ops[1].reg == ToCapstoneReg(dart::TypeTestABI::kScratchReg));
-		INSN_ASSERT(insn.ops[2].imm == dart::kSmiCid); // kMintCid is always be kSmiCid+1
-		++insn;
+			INSN_ASSERT(insn.id() == ARM64_INS_SUB);
+			INSN_ASSERT(insn.ops[0].reg == ToCapstoneReg(dart::TypeTestABI::kScratchReg));
+			INSN_ASSERT(insn.ops[1].reg == ToCapstoneReg(dart::TypeTestABI::kScratchReg));
+			INSN_ASSERT(insn.ops[2].imm == dart::kSmiCid); // kMintCid is always be kSmiCid+1
+			++insn;
 
-		INSN_ASSERT(insn.id() == ARM64_INS_CMP);
-		INSN_ASSERT(insn.ops[0].reg == ToCapstoneReg(dart::TypeTestABI::kScratchReg));
-		INSN_ASSERT(insn.ops[1].imm == 1 || insn.ops[1].imm == 2); // must be kSmiCid or kMintCid or kDoubleCid
-		const auto typeCheckCid = insn.ops[1].imm == 1 ? app.DartIntCid() : dart::kNumberCid;
-		++insn;
+			INSN_ASSERT(insn.id() == ARM64_INS_CMP);
+			INSN_ASSERT(insn.ops[0].reg == ToCapstoneReg(dart::TypeTestABI::kScratchReg));
+			INSN_ASSERT(insn.ops[1].imm == 1 || insn.ops[1].imm == 2); // must be kSmiCid or kMintCid or kDoubleCid
+			typeCheckCid = insn.ops[1].imm == 1 ? app.DartIntCid() : dart::kNumberCid;
+			++insn;
 
-		INSN_ASSERT(insn.IsBranch(ARM64_CC_LS));
-		INSN_ASSERT(insn.ops[0].imm == done_addr);
-		++insn;
+			INSN_ASSERT(insn.IsBranch(ARM64_CC_LS));
+			INSN_ASSERT(insn.ops[0].imm == done_addr);
+			++insn;
+		}
 
 		// kDstTypeReg from PP
 		const auto objPoolInstr = processGetObjectPoolInstruction(app, insn);
 		INSN_ASSERT(objPoolInstr.dstReg == A64::Register{ dart::TypeTestABI::kDstTypeReg });
 		INSN_ASSERT(objPoolInstr.item.ValueTypeId() == dart::kTypeCid);
-		const auto vtype_cid = objPoolInstr.item.Get<VarType>()->type.Class().Id();
-		INSN_ASSERT(vtype_cid == typeCheckCid);
-		//std::cout << std::format("typeCheck: {}, type: {}, cls id: {}\n", typeCheckRange, vtype->type.ToString(), vtype->type.Class().Id());
+		const auto vtype = objPoolInstr.item.Get<VarType>();
+		INSN_ASSERT(typeCheckCid == 0 || typeCheckCid == vtype->type.Class().Id());
 		insn += objPoolInstr.insCnt;
 
 		// kSubtypeTestCacheReg from PP
@@ -1446,13 +1463,13 @@ ILResult FunctionAnalyzer::processInstanceofNoTypeArgumentInstr(AsmInstruction i
 		INSN_ASSERT(insn.NextAddress() == done_addr);
 		auto dartFn = app.GetFunction(insn.ops[0].imm);
 		auto dartStub = dartFn->AsStub();
+		auto typeName = dartStub->Name();
 		if (typeCheckCid == app.DartIntCid()) {
 			INSN_ASSERT(dartStub->kind == DartStub::TypeCheckStub);
-			auto typeName = dartStub->Name();
 			INSN_ASSERT(typeName == "int" || typeName == "int?");
 		}
-		else { // typeCheckRange == dart::kNumberCid
-			INSN_ASSERT(dartStub->kind == DartStub::DefaultTypeTestStub);
+		else { // typeCheckCid == dart::kNumberCid || typeCheckCid == 0 (object)
+			INSN_ASSERT(typeName == vtype->ToString() || dartStub->kind == DartStub::DefaultTypeTestStub);
 		}
 		return ILResult{ insn.ptr(), std::make_unique<TestTypeInstr>(AddrRange(insn0_addr, insn.NextAddress()), A64::Register{ srcReg }, objPoolInstr.item.Get<VarType>()->ToString()) };
 	}

@@ -40,14 +40,39 @@ std::string FnParamInfo::ToString() const
 		txt += " = ";
 		txt += val->ToString();
 	}
-	if (valReg.IsSet()) {
+	if (valReg.IsSet() || localOffset) {
 		txt += " /* ";
-		txt += valReg.Name();
+		if (valReg.IsSet()) {
+			txt += valReg.Name();
+			if (localOffset)
+				txt += ", ";
+		}
 		if (localOffset)
-			txt += std::format(", fp-{:#x}", -localOffset);
+			txt += std::format("fp-{:#x}", -localOffset);
 		txt += " */";
 	}
 	return txt;
+}
+
+FnParamInfo* FnParams::findValReg(A64::Register reg)
+{
+	for (auto& param : params) {
+		if (param.valReg == reg) {
+			return &param;
+		}
+	}
+	return nullptr;
+}
+
+bool FnParams::movValReg(A64::Register dstReg, A64::Register srcReg)
+{
+	for (auto& param : params) {
+		if (param.valReg == srcReg) {
+			param.valReg = dstReg;
+			return true;
+		}
+	}
+	return false;
 }
 
 std::string FnParams::ToString() const

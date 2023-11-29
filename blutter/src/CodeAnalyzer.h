@@ -74,6 +74,8 @@ struct FnParams {
 	bool isNamedParam{ false };
 	std::vector<FnParamInfo> params;
 
+	FnParamInfo* findValReg(A64::Register reg);
+	bool movValReg(A64::Register dstReg, A64::Register srcReg);
 	std::string ToString() const;
 };
 
