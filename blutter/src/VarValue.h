@@ -18,13 +18,14 @@ struct VarStorage {
 		SmallImm, // array/object offset
 		Call, // return value
 		Field, // access field
+		Uninit,
 	};
 	VarStorage(A64::Register reg) : kind{ Register }, reg{ reg } {}
 	VarStorage(Kind kind) : kind{ kind }, offset{ 0 } {}
 	VarStorage(Kind kind, int val) : kind{ kind }, offset{ val } {}
 
 	static VarStorage NewExpression() { return VarStorage(Expression); }
-	static VarStorage NewRegister(A64::Register reg) { return VarStorage(Register, reg); }
+	static VarStorage NewRegister(A64::Register reg) { return VarStorage(reg); }
 	static VarStorage NewLocal(int offset) { return VarStorage(Local, offset); }
 	static VarStorage NewArgument(int idx) { return VarStorage(Argument, idx); }
 	static VarStorage NewStatic(int offset) { return VarStorage(Static, offset); }
@@ -33,6 +34,7 @@ struct VarStorage {
 	static VarStorage NewImmediate() { return VarStorage(Immediate); }
 	static VarStorage NewSmallImm(int val) { return VarStorage(SmallImm, val); }
 	static VarStorage NewCall() { return VarStorage(Call); }
+	static VarStorage NewUninit() { return VarStorage(Uninit); }
 
 	bool operator==(A64::Register reg) const { return kind == Register && reg == this->reg; }
 	bool IsImmediate() { return kind == Immediate; }
@@ -278,6 +280,7 @@ struct VarCid : public VarValue {
 
 
 struct VarItem {
+	explicit VarItem() : storage(VarStorage::Uninit) {}
 	explicit VarItem(VarStorage storage) : storage(storage) {}
 	explicit VarItem(VarStorage storage, std::shared_ptr<VarValue> val) : storage(storage), val(val) {}
 	explicit VarItem(VarStorage storage, VarValue* val) : storage(storage), val(std::shared_ptr<VarValue>(val)) {}
@@ -287,8 +290,12 @@ struct VarItem {
 
 	VarStorage Storage() { return storage; }
 	std::string StorageName() { return storage.Name(); }
-	std::shared_ptr<VarValue> Value() { return val; }
+
+	template <typename T, typename = std::enable_if<std::is_base_of<VarValue, T>::value>>
+	T* Get() const { return reinterpret_cast<T*>(val.get()); }
+	std::shared_ptr<VarValue> Value() const { return val; }
 	std::string ValueString() { return val ? val->ToString() : "BUG_NO_ASSIGN_VALUE"; }
+	ValueType ValueTypeId() const { return val->RawTypeId(); }
 	VarItem* MoveTo(VarStorage storage) { return new VarItem(storage, this->val); }
 	VarItem* MoveTo(A64::Register reg) { return new VarItem(VarStorage::NewRegister(reg), this->val); }
 

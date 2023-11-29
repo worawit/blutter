@@ -2,7 +2,7 @@
 #include "Disassembler.h"
 
 namespace A64 {
-const char* RegisterNames[] = {
+const char* Register::RegisterNames[] = {
 	"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9",
 	"r10", "r11", "r12", "r13", "r14", "rSP", "r16", "r17", "r18", "r19",
 	"r20", "r21", "rNULL", "r23", "r24", "r25", "rTHR", "rPP", "rHEAP", "rFP",

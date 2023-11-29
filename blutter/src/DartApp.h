@@ -28,6 +28,8 @@ public:
 	dart::ObjectPool& GetObjectPool() { return *ppool; }
 	DartTypeDb* TypeDb() { return typeDb.get(); }
 
+	intptr_t DartIntCid() const { return dartIntCid; }
+
 private:
 	DartLibrary* addLibraryClass(const dart::Library& library, const dart::Class& cls);
 	DartLibrary* addLibrary(const dart::Library& library);

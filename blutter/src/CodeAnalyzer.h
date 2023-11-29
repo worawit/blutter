@@ -52,6 +52,31 @@ private:
 	std::vector<AsmText> asm_texts;
 };
 
+struct FnParamInfo {
+	A64::Register valReg;
+	int32_t localOffset{ 0 }; // offset from FP (local variable)
+	DartType* type{ nullptr };
+	std::string name;
+	std::shared_ptr<VarValue> val;
+	explicit FnParamInfo(A64::Register valReg) : valReg(valReg) {}
+	explicit FnParamInfo(A64::Register valReg, int32_t localOffset) : valReg(valReg), localOffset(localOffset) {}
+	explicit FnParamInfo(A64::Register valReg, std::shared_ptr<VarValue> val) : valReg(valReg), val(val) {}
+	explicit FnParamInfo(A64::Register valReg, int32_t localOffset, DartType* type, std::string name, std::shared_ptr<VarValue> val)
+		: valReg(valReg), localOffset(localOffset), type(type), name(std::move(name)), val(val) {}
+	explicit FnParamInfo(A64::Register valReg, std::string name) : valReg(valReg), name(std::move(name)) {}
+	explicit FnParamInfo(std::string name) : name(std::move(name)) {}
+
+	std::string ToString() const;
+};
+
+struct FnParams {
+	uint8_t numFixedParam{ 0 };
+	bool isNamedParam{ false };
+	std::vector<FnParamInfo> params;
+
+	std::string ToString() const;
+};
+
 class AnalyzedFnData {
 public:
 	AnalyzedFnData(DartApp& app, DartFunction& dartFn, AsmTexts asmTexts);
@@ -73,6 +98,7 @@ public:
 	cs_insn* last_ret;
 	uint32_t stackSize; // for local variables (this includes space for call arguments)
 	bool useFramePointer;
+	FnParams params;
 	std::vector<std::unique_ptr<ILInstr>> il_insns;
 
 	friend class CodeAnalyzer;

@@ -8,7 +8,7 @@ std::string VarStorage::Name()
 {
 	switch (kind) {
 	case Register:
-		return GetRegisterName(reg);
+		return reg.Name();
 	case Local:
 		return std::format("local_{:x}", -offset);
 	case Argument:

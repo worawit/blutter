@@ -4,6 +4,7 @@
 
 // forward declaration
 struct AsmText;
+struct FnParams;
 
 struct AddrRange {
 	uint64_t start{ 0 };
@@ -23,11 +24,13 @@ public:
 		LeaveFrame,
 		AllocateStack,
 		CheckStackOverflow,
+		LoadValue,
 		LoadObject,
 		LoadImm,
 		DecompressPointer,
 		SaveRegister,
 		RestoreRegister,
+		SetupParameters,
 		GdtCall,
 		Call,
 		Return,
@@ -139,6 +142,25 @@ protected:
 	uint64_t overflowBranch;
 };
 
+class LoadValueInstr : public ILInstr {
+public:
+	LoadValueInstr(AddrRange addrRange, A64::Register dstReg, VarItem& val) : ILInstr(LoadValue, addrRange), dstReg(dstReg), val(val) {}
+	LoadValueInstr() = delete;
+	LoadValueInstr(LoadValueInstr&&) = delete;
+	LoadValueInstr& operator=(const LoadValueInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::string(dstReg.Name()) + " = " + val.Name();
+	}
+
+	VarItem& GetValue() {
+		return val;
+	}
+
+	A64::Register dstReg;
+	VarItem val;
+};
+
 class LoadObjectInstr : public ILInstr {
 public:
 	LoadObjectInstr(AddrRange addrRange, VarStorage dst, std::shared_ptr<VarItem> val) : ILInstr(LoadObject, addrRange), dst(dst), val(val) {}
@@ -167,7 +189,7 @@ public:
 	LoadImmInstr& operator=(const LoadImmInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{} = {:#x}", A64::GetRegisterName(dstReg), val);
+		return std::format("{} = {:#x}", dstReg.Name(), val);
 	}
 
 	A64::Register dstReg;
@@ -197,7 +219,7 @@ public:
 	SaveRegisterInstr& operator=(const SaveRegisterInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::string("SaveReg ") + A64::GetRegisterName(srcReg);
+		return std::string("SaveReg ") + srcReg.Name();
 	}
 
 protected:
@@ -212,11 +234,23 @@ public:
 	RestoreRegisterInstr& operator=(const RestoreRegisterInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::string("RestoreReg ") + A64::GetRegisterName(dstReg);
+		return std::string("RestoreReg ") + dstReg.Name();
 	}
 
 protected:
 	A64::Register dstReg;
+};
+
+class SetupParametersInstr : public ILInstr {
+public:
+	SetupParametersInstr(AddrRange addrRange, FnParams* params) : ILInstr(SetupParameters, addrRange), params(params) {}
+	SetupParametersInstr() = delete;
+	SetupParametersInstr(SetupParametersInstr&&) = delete;
+	SetupParametersInstr& operator=(const SetupParametersInstr&) = delete;
+
+	virtual std::string ToString();
+
+	FnParams* params;
 };
 
 class GdtCallInstr : public ILInstr {
@@ -280,7 +314,7 @@ public:
 	BranchIfSmiInstr& operator=(const BranchIfSmiInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("branchIfSmi({}, {:#x})", A64::GetRegisterName(objReg), branchAddr);
+		return std::format("branchIfSmi({}, {:#x})", objReg.Name(), branchAddr);
 	}
 
 	A64::Register objReg;
@@ -295,7 +329,7 @@ public:
 	LoadClassIdInstr& operator=(const LoadClassIdInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{} = LoadClassIdInstr({})", A64::GetRegisterName(cidReg), A64::GetRegisterName(objReg));
+		return std::format("{} = LoadClassIdInstr({})", cidReg.Name(), objReg.Name());
 	}
 
 	A64::Register objReg;
@@ -304,7 +338,7 @@ public:
 
 class LoadTaggedClassIdMayBeSmiInstr : public ILInstr {
 public:
-	LoadTaggedClassIdMayBeSmiInstr(AddrRange addrRange, std::unique_ptr<LoadImmInstr> il_loadImm, 
+	LoadTaggedClassIdMayBeSmiInstr(AddrRange addrRange, std::unique_ptr<LoadValueInstr> il_loadImm,
 		std::unique_ptr<BranchIfSmiInstr> il_branchIfSmi, std::unique_ptr<LoadClassIdInstr> il_loadClassId) 
 		: ILInstr(LoadTaggedClassIdMayBeSmi, addrRange), taggedCidReg(il_loadClassId->cidReg), objReg(il_loadClassId->objReg),
 		il_loadImm(std::move(il_loadImm)), il_branchIfSmi(std::move(il_branchIfSmi)), il_loadClassId(std::move(il_loadClassId)) {}
@@ -313,12 +347,12 @@ public:
 	LoadTaggedClassIdMayBeSmiInstr& operator=(const LoadTaggedClassIdMayBeSmiInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{} = LoadTaggedClassIdMayBeSmiInstr({})", A64::GetRegisterName(taggedCidReg), A64::GetRegisterName(objReg));
+		return std::format("{} = LoadTaggedClassIdMayBeSmiInstr({})", taggedCidReg.Name(), objReg.Name());
 	}
 
 	A64::Register taggedCidReg;
 	A64::Register objReg;
-	std::unique_ptr<LoadImmInstr> il_loadImm;
+	std::unique_ptr<LoadValueInstr> il_loadImm;
 	std::unique_ptr<BranchIfSmiInstr> il_branchIfSmi;
 	std::unique_ptr<LoadClassIdInstr> il_loadClassId;
 };
@@ -331,7 +365,7 @@ public:
 	BoxInt64Instr& operator=(const BoxInt64Instr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{} = BoxInt64Instr({})", A64::GetRegisterName(objReg), A64::GetRegisterName(srcReg));
+		return std::format("{} = BoxInt64Instr({})", objReg.Name(), srcReg.Name());
 	}
 
 	A64::Register objReg;
@@ -346,7 +380,7 @@ public:
 	LoadInt32Instr& operator=(const LoadInt32Instr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{} = LoadInt32Instr({})", A64::GetRegisterName(dstReg), A64::GetRegisterName(srcObjReg));
+		return std::format("{} = LoadInt32Instr({})", dstReg.Name(), srcObjReg.Name());
 	}
 
 	A64::Register dstReg;
@@ -362,7 +396,7 @@ public:
 	AllocateObjectInstr& operator=(const AllocateObjectInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{} = inline_Allocate{}()", A64::GetRegisterName(dstReg), dartCls.Name());
+		return std::format("{} = inline_Allocate{}()", dstReg.Name(), dartCls.Name());
 	}
 
 	A64::Register dstReg;
@@ -412,7 +446,7 @@ public:
 	LoadArrayElementInstr& operator=(const LoadArrayElementInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("ArrayLoad: {} = {}[{}]  ; {}", A64::GetRegisterName(dstReg), A64::GetRegisterName(arrReg), idx.Name(), arrayOp.ToString());
+		return std::format("ArrayLoad: {} = {}[{}]  ; {}", dstReg.Name(), arrReg.Name(), idx.Name(), arrayOp.ToString());
 	}
 
 	A64::Register dstReg;
@@ -430,7 +464,7 @@ public:
 	StoreArrayElementInstr& operator=(const StoreArrayElementInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("ArrayStore: {}[{}] = {}  ; {}", A64::GetRegisterName(arrReg), idx.Name(), A64::GetRegisterName(valReg), arrayOp.ToString());
+		return std::format("ArrayStore: {}[{}] = {}  ; {}", arrReg.Name(), idx.Name(), valReg.Name(), arrayOp.ToString());
 	}
 
 	A64::Register valReg;
@@ -448,7 +482,7 @@ public:
 	LoadFieldInstr& operator=(const LoadFieldInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("LoadField: {} = {}->field_{:x}", A64::GetRegisterName(dstReg), A64::GetRegisterName(objReg), offset);
+		return std::format("LoadField: {} = {}->field_{:x}", dstReg.Name(), objReg.Name(), offset);
 	}
 
 	A64::Register dstReg;
@@ -467,7 +501,7 @@ public:
 	StoreFieldInstr& operator=(const StoreFieldInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("StoreField: {}->field_{:x} = {}", A64::GetRegisterName(objReg), offset, A64::GetRegisterName(valReg));
+		return std::format("StoreField: {}->field_{:x} = {}", objReg.Name(), offset, valReg.Name());
 	}
 
 	A64::Register valReg;
@@ -506,7 +540,7 @@ public:
 	LoadStaticFieldInstr& operator=(const LoadStaticFieldInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{} = LoadStaticField({:#x})", A64::GetRegisterName(dstReg), fieldOffset);
+		return std::format("{} = LoadStaticField({:#x})", dstReg.Name(), fieldOffset);
 	}
 
 protected:
@@ -523,7 +557,7 @@ public:
 	StoreStaticFieldInstr& operator=(const StoreStaticFieldInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("StoreStaticField({:#x}, {})", fieldOffset, A64::GetRegisterName(valReg));
+		return std::format("StoreStaticField({:#x}, {})", fieldOffset, valReg.Name());
 	}
 
 protected:
@@ -540,7 +574,7 @@ public:
 	WriteBarrierInstr& operator=(const WriteBarrierInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{}WriteBarrierInstr(obj = {}, val = {})", isArray ? "Array" : "", A64::GetRegisterName(objReg), A64::GetRegisterName(valReg));
+		return std::format("{}WriteBarrierInstr(obj = {}, val = {})", isArray ? "Array" : "", objReg.Name(), valReg.Name());
 	}
 
 	A64::Register objReg;
@@ -557,7 +591,7 @@ public:
 	TestTypeInstr& operator=(const TestTypeInstr&) = delete;
 
 	virtual std::string ToString() {
-		return std::format("{} as {}", A64::GetRegisterName(srcReg), typeName);
+		return std::format("{} as {}", srcReg.Name(), typeName);
 	}
 
 	A64::Register srcReg;
