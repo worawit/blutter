@@ -378,11 +378,13 @@ public:
 		friend class AsmInstruction;
 	} ops;
 
-	AsmInstruction(cs_insn* insn) : insn(insn), ops(insn->detail->arm64.operands) {}
+	AsmInstruction(cs_insn* insn) : insn((insn->id == ARM64_INS_NOP) ? ++insn : insn), ops(insn->detail->arm64.operands) {}
 	AsmInstruction& operator=(const AsmInstruction&) = default;
 	// prefix increment
 	AsmInstruction& operator++() {
 		++insn;
+		if (insn->id == ARM64_INS_NOP)
+			++insn;
 		ops = insn->detail->arm64.operands;
 		return *this;
 	}
@@ -393,6 +395,8 @@ public:
 	}
 	AsmInstruction& operator+=(int cnt) {
 		insn += cnt;
+		if (insn->id == ARM64_INS_NOP)
+			++insn;
 		ops = insn->detail->arm64.operands;
 		return *this;
 	}

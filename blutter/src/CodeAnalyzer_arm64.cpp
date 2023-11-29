@@ -849,10 +849,11 @@ ILResult FunctionAnalyzer::processOptionalParametersInstr(AsmInstruction insn)
 
 						if (insn.IsBranch(ARM64_CC_EQ)) {
 							// last named parameter and not used
-							INSN_ASSERT(insn.ops[0].imm == insn.NextAddress());
+							const auto branchTarget = insn.ops[0].imm;
+							++insn;
+							INSN_ASSERT(branchTarget == insn.address());
 							fnInfo->params.params.push_back(FnParamInfo{ std::move(paramName) });
 							++nameParamCnt;
-							++insn;
 							break;
 						}
 
@@ -1666,8 +1667,6 @@ ILResult FunctionAnalyzer::processTryAllocateObject(AsmInstruction insn)
 		INSN_ASSERT(insn.address() < slow_path && slow_path < dartFn->AddressEnd());
 
 		++insn;
-		if (insn.id() == ARM64_INS_NOP)
-			++insn;
 
 		INSN_ASSERT(insn.id() == ARM64_INS_STR);
 		INSN_ASSERT(insn.ops[0].reg == inst_reg);
@@ -1738,8 +1737,6 @@ ILWBResult FunctionAnalyzer::processWriteBarrier(AsmInstruction insn)
 		valReg = A64::Register{ insn.ops[0].reg };
 		contSmiAddr = (uint64_t)insn.ops[2].imm;
 		++insn;
-		if (insn.id() == ARM64_INS_NOP)
-			++insn;
 	}
 
 	if (insn.id() != ARM64_INS_LDURB || A64::Register{ insn.ops[0].reg } != A64::TMP_REG || insn.ops[1].mem.disp != -1)
@@ -1775,8 +1772,6 @@ ILWBResult FunctionAnalyzer::processWriteBarrier(AsmInstruction insn)
 	INSN_ASSERT(contSmiAddr == 0 || contSmiAddr == contAddr);
 
 	++insn;
-	if (insn.id() == ARM64_INS_NOP)
-		++insn;
 	bool spill_lr = false;
 	if (insn.id() == ARM64_INS_STR) {
 		// spill_lr => Push(LR)
