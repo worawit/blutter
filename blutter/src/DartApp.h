@@ -17,9 +17,9 @@ public:
 
 	void LoadInfo();
 
-	intptr_t base() { return (intptr_t)lib_base; }
-	uint32_t offset(intptr_t addr) { return (uint32_t)(addr - base()); }
-	uintptr_t heap_base() { return heap_base_; }
+	intptr_t base() const { return (intptr_t)lib_base; }
+	uint32_t offset(intptr_t addr) const { return (uint32_t)(addr - base()); }
+	uintptr_t heap_base() const { return heap_base_; }
 
 	DartClass* GetClass(intptr_t cid);
 	DartFnBase* GetFunction(uint64_t addr);
@@ -29,6 +29,7 @@ public:
 	DartTypeDb* TypeDb() { return typeDb.get(); }
 
 	intptr_t DartIntCid() const { return dartIntCid; }
+	intptr_t DartFutureCid() const { return dartFutureCid; }
 
 private:
 	DartLibrary* addLibraryClass(const dart::Library& library, const dart::Class& cls);
@@ -74,6 +75,7 @@ private:
 	intptr_t dartSetCid;
 	intptr_t dartMapCid;
 	intptr_t dartRunesCid;
+	intptr_t dartFutureCid;
 
 	intptr_t throwStubAddr;
 

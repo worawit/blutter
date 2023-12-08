@@ -31,6 +31,7 @@ public:
 		SaveRegister,
 		RestoreRegister,
 		SetupParameters,
+		InitAsync,
 		GdtCall,
 		Call,
 		Return,
@@ -57,10 +58,10 @@ public:
 	virtual ~ILInstr() {}
 
 	virtual std::string ToString() = 0;
-	ILKind Kind() { return kind; }
-	uint64_t Start() { return addrRange.start; }
-	uint64_t End() { return addrRange.end; }
-	AddrRange Range() { return addrRange; }
+	ILKind Kind() const { return kind; }
+	uint64_t Start() const { return addrRange.start; }
+	uint64_t End() const { return addrRange.end; }
+	AddrRange Range() const { return addrRange; }
 
 protected:
 	ILInstr(ILKind kind, AddrRange& addrRange) : addrRange(addrRange), kind(kind) {}
@@ -161,26 +162,6 @@ public:
 	VarItem val;
 };
 
-class LoadObjectInstr : public ILInstr {
-public:
-	LoadObjectInstr(AddrRange addrRange, VarStorage dst, std::shared_ptr<VarItem> val) : ILInstr(LoadObject, addrRange), dst(dst), val(val) {}
-	LoadObjectInstr() = delete;
-	LoadObjectInstr(LoadObjectInstr&&) = delete;
-	LoadObjectInstr& operator=(const LoadObjectInstr&) = delete;
-
-	virtual std::string ToString() {
-		return dst.Name() + " = " + val->Name();
-	}
-
-	std::shared_ptr<VarItem> GetValue() {
-		return val;
-	}
-
-protected:
-	VarStorage dst;
-	std::shared_ptr<VarItem> val;
-};
-
 class LoadImmInstr : public ILInstr {
 public:
 	LoadImmInstr(AddrRange addrRange, A64::Register dstReg, int64_t val) : ILInstr(LoadImm, addrRange), dstReg(dstReg), val(val) {}
@@ -251,6 +232,21 @@ public:
 	virtual std::string ToString();
 
 	FnParams* params;
+};
+
+class InitAsyncInstr : public ILInstr {
+public:
+	InitAsyncInstr(AddrRange addrRange, DartType* retType) : ILInstr(InitAsync, addrRange), retType(retType) {}
+	InitAsyncInstr() = delete;
+	InitAsyncInstr(InitAsyncInstr&&) = delete;
+	InitAsyncInstr& operator=(const InitAsyncInstr&) = delete;
+
+	virtual std::string ToString() {
+		return "InitAsync() -> " + retType->ToString();
+	}
+
+protected:
+	DartType* retType;
 };
 
 class GdtCallInstr : public ILInstr {

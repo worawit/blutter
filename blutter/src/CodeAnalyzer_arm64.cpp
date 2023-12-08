@@ -267,6 +267,7 @@ public:
 	ILResult processOptionalParametersInstr(AsmInstruction insn);
 	ILResult processSaveRegisterInstr(AsmInstruction insn);
 	ILResult processLoadSavedRegisterInstr(AsmInstruction insn);
+	ILResult processInitAsyncInstr(AsmInstruction insn);
 	ILResult processCallInstr(AsmInstruction insn);
 	ILResult processGdtCallInstr(AsmInstruction insn);
 	ILResult processReturnInstr(AsmInstruction insn);
@@ -299,6 +300,7 @@ static const AsmMatcherFn matcherFns[] = {
 	&FunctionAnalyzer::processOptionalParametersInstr,
 	&FunctionAnalyzer::processSaveRegisterInstr,
 	&FunctionAnalyzer::processLoadSavedRegisterInstr,
+	&FunctionAnalyzer::processInitAsyncInstr,
 	&FunctionAnalyzer::processCallInstr,
 	&FunctionAnalyzer::processGdtCallInstr,
 	&FunctionAnalyzer::processReturnInstr,
@@ -1109,6 +1111,39 @@ ILResult FunctionAnalyzer::processLoadSavedRegisterInstr(AsmInstruction insn)
 		INSN_ASSERT(insn.ops[2].imm == GetCsRegSize(insn.ops[0].reg));
 		return ILResult{ insn.ptr(), std::make_unique<RestoreRegisterInstr>(insn.ptr(), A64::Register{ insn.ops[0].reg }) };
 	}
+	return ILResult{};
+}
+
+ILResult FunctionAnalyzer::processInitAsyncInstr(AsmInstruction insn)
+{
+	// InitAsync cannot be tail jump
+	if (insn.id() == ARM64_INS_BL && insn.ops[0].type == ARM64_OP_IMM) {
+		const auto fn = app.GetFunction(insn.ops[0].imm);
+		if (fn->IsStub()) {
+			const auto stub = fn->AsStub();
+			auto il = fnInfo->LastIL();
+			if (stub->kind == DartStub::InitAsyncStub && il->Kind() == ILInstr::LoadValue) {
+				auto ilLoad = reinterpret_cast<LoadValueInstr*>(il);
+				INSN_ASSERT(ilLoad->dstReg == A64::Register::R0);
+				auto& item = ilLoad->GetValue();
+				DartType* returnType;
+				if (item.ValueTypeId() == dart::kNullCid) {
+					// Future<Null>
+					returnType = app.TypeDb()->FindOrAdd(app.DartFutureCid(), &DartTypeArguments::Null);
+				}
+				else {
+					INSN_ASSERT(item.ValueTypeId() == dart::kTypeArgumentsCid);
+					auto typeArg = &(item.Get<VarTypeArgument>()->typeArgs);
+					returnType = app.TypeDb()->FindOrAdd(app.DartFutureCid(), typeArg);
+				}
+				fnInfo->returnType = returnType;
+				const auto start = il->Start();
+				fnInfo->RemoveLastIL();
+				return ILResult{ insn.ptr(), std::make_unique<InitAsyncInstr>(AddrRange(start, insn.NextAddress()), returnType)};
+			}
+		}
+	}
+
 	return ILResult{};
 }
 
@@ -2087,19 +2122,18 @@ void FunctionAnalyzer::asm2il()
 				if (insn2) {
 					//auto il = fnInfo->il_insns.back().get();
 					auto il = res.il.get();
-					if (il->Kind() == ILInstr::LoadObject) {
+					if (il->Kind() == ILInstr::LoadValue) {
 						auto& asm_text = fnInfo->asmTexts.AtAddr(il->Start());
-						const auto val = reinterpret_cast<LoadObjectInstr*>(il)->GetValue();
-						if (val->Storage().kind == VarStorage::Pool) {
+						const auto& val = reinterpret_cast<LoadValueInstr*>(il)->GetValue();
+						if (val.Storage().kind == VarStorage::Pool) {
 							// TODO: NativeDouble and NativeInt
 							asm_text.dataType = AsmText::PoolOffset;
-							asm_text.poolOffset = val->Storage().offset;
+							asm_text.poolOffset = val.Storage().offset;
 						}
-						else if (val->Storage().kind == VarStorage::Immediate) {
+						else if (val.Storage().kind == VarStorage::Immediate && val.ValueTypeId() == dart::kBoolCid) {
 							// can be only boolean. imm as integer or double is in pool offset
-							RELEASE_ASSERT(val->Value()->TypeId() == dart::kBoolCid);
 							asm_text.dataType = AsmText::Boolean;
-							asm_text.boolVal = reinterpret_cast<VarBoolean*>(val->Value().get())->val;
+							asm_text.boolVal = reinterpret_cast<VarBoolean*>(val.Value().get())->val;
 						}
 					}
 					else if (il->Kind() == ILInstr::Call) {

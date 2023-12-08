@@ -3,7 +3,7 @@
 #include "DartApp.h"
 
 AnalyzedFnData::AnalyzedFnData(DartApp& app, DartFunction& dartFn, AsmTexts asmTexts)
-	: app(app), dartFn(dartFn), asmTexts(std::move(asmTexts)), last_ret(nullptr), stackSize(0), useFramePointer(false)
+	: app(app), dartFn(dartFn), asmTexts(std::move(asmTexts)), last_ret(nullptr), stackSize(0), useFramePointer(false), returnType(nullptr)
 {
 }
 

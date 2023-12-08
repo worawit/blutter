@@ -356,7 +356,7 @@ DartType* DartTypeDb::FindOrAdd(DartClass& dartCls, const dart::TypeArgumentsPtr
 		return dtype->args == args;
 	});
 	if (it == types.end()) {
-		dartType = new DartType(false, dartCls, args);
+		dartType = new DartType{ false, dartCls, args };
 		types.push_back(dartType);
 	}
 	else {
@@ -375,6 +375,18 @@ DartType* DartTypeDb::FindOrAdd(DartClass& dartCls, const dart::Instance& inst)
 
 	// the instance always has type arguments because the class can be parameterized
 	return FindOrAdd(dartCls, inst.GetTypeArguments());
+}
+
+
+DartType* DartTypeDb::FindOrAdd(uint32_t cid, const DartTypeArguments* typeArgs)
+{
+	for (auto type : typesByCid[cid]) {
+		if (type->args == typeArgs)
+			return type;
+	}
+	auto dartType = new DartType{ false, *classes[cid], typeArgs };
+	typesByCid[cid].push_back(dartType);
+	return dartType;
 }
 
 DartType* DartTypeDb::Get(uint32_t cid)

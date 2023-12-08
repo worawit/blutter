@@ -222,6 +222,7 @@ public:
 
 	DartType* FindOrAdd(DartClass& dartCls, const dart::TypeArgumentsPtr typeArgsPtr);
 	DartType* FindOrAdd(DartClass& dartCls, const dart::Instance& inst);
+	DartType* FindOrAdd(uint32_t cid, const DartTypeArguments* typeArgs);
 
 protected:
 	DartTypeDb(std::vector<DartClass*>& classes) : classes(classes) { typesByCid.resize(classes.size()); }

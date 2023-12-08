@@ -34,6 +34,7 @@ DartApp::DartApp(const char* path) : ppool(NULL), nativeLib(0xdeadead), throwStu
 	dartSetCid = 0;
 	dartMapCid = 0;
 	dartRunesCid = 0;
+	dartFutureCid = 0;
 }
 
 DartApp::~DartApp()
@@ -250,6 +251,7 @@ void DartApp::loadFromClassTable(dart::IsolateGroup* ig)
 		else if (dartCls->name == "Set") dartSetCid = dartCls->id;
 		else if (dartCls->name == "Map") dartMapCid = dartCls->id;
 		else if (dartCls->name == "Runes") dartRunesCid = dartCls->id;
+		else if (dartCls->name == "Future") dartFutureCid = dartCls->id;
 	}
 
 	typeDb = std::unique_ptr<DartTypeDb>(new DartTypeDb(classes));

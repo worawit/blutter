@@ -102,6 +102,7 @@ public:
 	bool useFramePointer;
 	FnParams params;
 	std::vector<std::unique_ptr<ILInstr>> il_insns;
+	DartType* returnType;
 
 	friend class CodeAnalyzer;
 };

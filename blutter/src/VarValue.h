@@ -37,8 +37,8 @@ struct VarStorage {
 	static VarStorage NewUninit() { return VarStorage(Uninit); }
 
 	bool operator==(A64::Register reg) const { return kind == Register && reg == this->reg; }
-	bool IsImmediate() { return kind == Immediate; }
-	bool IsPredefinedValue() { return kind == Immediate || kind == Pool; }
+	bool IsImmediate() const { return kind == Immediate; }
+	bool IsPredefinedValue() const { return kind == Immediate || kind == Pool; }
 
 	std::string Name();
 
@@ -67,9 +67,9 @@ struct VarValue {
 	//VarValue() : kind(Unknown), hasValue(false) {}
 	virtual ~VarValue() {}
 	virtual std::string ToString() = 0;// { return "unknown"; }
-	bool HasValue() { return hasValue; }
+	bool HasValue() const { return hasValue; }
 	virtual ValueType TypeId() { return typeId; }
-	ValueType RawTypeId() { return typeId; }
+	ValueType RawTypeId() const { return typeId; }
 
 	void SetIntType(ValueType tid);
 	void SetSmiIfInt();
@@ -288,13 +288,13 @@ struct VarItem {
 	explicit VarItem(A64::Register reg, std::shared_ptr<VarValue> val) : storage(VarStorage(reg)), val(val) {}
 	explicit VarItem(A64::Register reg, VarValue* val) : storage(VarStorage(reg)), val(std::shared_ptr<VarValue>(val)) {}
 
-	VarStorage Storage() { return storage; }
+	VarStorage Storage() const { return storage; }
 	std::string StorageName() { return storage.Name(); }
 
 	template <typename T, typename = std::enable_if<std::is_base_of<VarValue, T>::value>>
 	T* Get() const { return reinterpret_cast<T*>(val.get()); }
 	std::shared_ptr<VarValue> Value() const { return val; }
-	std::string ValueString() { return val ? val->ToString() : "BUG_NO_ASSIGN_VALUE"; }
+	std::string ValueString() const { return val ? val->ToString() : "BUG_NO_ASSIGN_VALUE"; }
 	ValueType ValueTypeId() const { return val->RawTypeId(); }
 	VarItem* MoveTo(VarStorage storage) { return new VarItem(storage, this->val); }
 	VarItem* MoveTo(A64::Register reg) { return new VarItem(VarStorage::NewRegister(reg), this->val); }
