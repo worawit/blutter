@@ -145,7 +145,7 @@ protected:
 
 class LoadValueInstr : public ILInstr {
 public:
-	LoadValueInstr(AddrRange addrRange, A64::Register dstReg, VarItem& val) : ILInstr(LoadValue, addrRange), dstReg(dstReg), val(val) {}
+	LoadValueInstr(AddrRange addrRange, A64::Register dstReg, VarItem val) : ILInstr(LoadValue, addrRange), dstReg(dstReg), val(std::move(val)) {}
 	LoadValueInstr() = delete;
 	LoadValueInstr(LoadValueInstr&&) = delete;
 	LoadValueInstr& operator=(const LoadValueInstr&) = delete;

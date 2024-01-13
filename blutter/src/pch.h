@@ -63,4 +63,12 @@ namespace dart {
 //#define DEBUG_ASSERT(cond) RELEASE_ASSERT(cond)
 #endif // defined SEMIDBG && !defined DEBUG
 
+// https://github.com/dart-lang/sdk/commit/bf4bb953081f11fbec9a1c0ea08b428c744b369e
+// new async/await implementation in Dart (around version 2.16 or 2.17)
+// the result is generated code in async and prologue is changed drastically
+//   now, analyzer can only work against new implementation
+#ifdef CACHED_FUNCTION_ENTRY_POINTS_LIST
+#  define HAS_INIT_ASYNC 1
+#endif
+
 #endif //PCH_H

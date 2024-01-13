@@ -332,12 +332,19 @@ void DartDumper::DumpCode(const char* out_dir)
 						}
 						else {
 							while ((*il_itr)->Start() < asmText.addr) {
+								if ((*il_itr)->Kind() != ILInstr::Unknown) {
+									of << std::format("{:#x}: {}\n", (*il_itr)->Start(), (*il_itr)->ToString());
+									of << "    // ";
+								}
 								++il_itr;
 							}
-							if ((*il_itr)->Start() == asmText.addr && (*il_itr)->Kind() != ILInstr::Unknown) {
-								of << std::format("{:#x}: {}\n", asmText.addr, (*il_itr)->ToString());
-								of << "    //     ";
-								range = (*il_itr)->Range();
+							if ((*il_itr)->Start() == asmText.addr) {
+								if ((*il_itr)->Kind() != ILInstr::Unknown) {
+									of << std::format("{:#x}: {}\n", asmText.addr, (*il_itr)->ToString());
+									of << "    //     ";
+									range = (*il_itr)->Range();
+								}
+								++il_itr;
 							}
 						}
 

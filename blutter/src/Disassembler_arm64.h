@@ -289,7 +289,8 @@ public:
 		return RegisterNames[reg];
 	}
 
-	Value value() const {
+	constexpr operator int() const { return reg; }
+	constexpr Value value() const {
 		return reg;
 	}
 
@@ -363,6 +364,25 @@ constexpr auto NULL_REG = Register{ dart::NULL_REG };
 //	}
 //}
 }; // namespace ARM64
+
+constexpr arm64_reg ToCapstoneReg(A64::Register r)
+{
+#define REG_CASE(n) case A64::Register::R##n: \
+		return ARM64_REG_X##n
+
+	switch (r.value()) {
+		REG_CASE(0); REG_CASE(1); REG_CASE(2); REG_CASE(3); REG_CASE(4);
+		REG_CASE(5); REG_CASE(6); REG_CASE(7); REG_CASE(8); REG_CASE(9);
+		REG_CASE(10); REG_CASE(11); REG_CASE(12); REG_CASE(13); REG_CASE(14);
+		REG_CASE(15); REG_CASE(16); REG_CASE(17); REG_CASE(18); REG_CASE(19);
+		REG_CASE(20); REG_CASE(21); REG_CASE(22); REG_CASE(23); REG_CASE(24);
+		REG_CASE(25); REG_CASE(26); REG_CASE(27); REG_CASE(28); REG_CASE(29);
+		REG_CASE(30);
+	default:
+		return ARM64_REG_INVALID;
+	}
+#undef REG_CASE
+}
 
 
 class AsmInstruction {

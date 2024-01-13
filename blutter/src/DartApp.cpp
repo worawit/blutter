@@ -574,6 +574,48 @@ void DartApp::finalizeFunctionsInfo()
 		}
 	}
 
+	// extract function parameters
+	// Note: Signature is dropped in most function
+	auto& func = dart::Function::Handle();
+	for (auto& [_, dartFn] : functions) {
+		func = dartFn->ptr;
+		const auto sigPtr = func.signature();
+		if (!sigPtr.IsHeapObject())
+			continue;
+		const auto& sig = dart::FunctionType::Handle(sigPtr);
+		if (!sig.IsNull()) {
+			dartFn->Signature().returnType = TypeDb()->FindOrAdd(sig.result_type());
+
+			// function type paramaters
+			const auto& type_params = dart::TypeParameters::Handle(sig.type_parameters());
+			if (!type_params.IsNull()) {
+				// TODO: function type parameters
+				//type_params.Print(dart::Thread::Current(), zone, false, 0, dart::Object::kScrubbedName, &buffer);
+			}
+
+			const intptr_t num_params = sig.NumParameters();
+			const intptr_t num_fixed_params = sig.num_fixed_parameters();
+			const intptr_t num_opt_pos_params = sig.NumOptionalPositionalParameters();
+			const intptr_t num_opt_named_params = sig.NumOptionalNamedParameters();
+			const intptr_t num_opt_params = num_opt_pos_params + num_opt_named_params;
+
+			auto& dname = dart::String::Handle();
+			for (intptr_t i = 0; i < num_params; i++) {
+				auto dtype = TypeDb()->FindOrAdd(sig.ParameterTypeAt(i));
+				auto isRequired = false;
+				std::string name;
+
+				if (num_opt_named_params > 0 && i >= num_fixed_params) {
+					if (sig.IsRequiredAt(i))
+						isRequired = true;
+					dname = sig.ParameterNameAt(i);
+					name = dname.ToCString();
+				}
+
+				dartFn->Signature().params.push_back(FnParam{ dtype, std::move(name), isRequired });
+			}
+		}
+	}
 }
 
 void DartApp::walkObject(dart::Object& obj)

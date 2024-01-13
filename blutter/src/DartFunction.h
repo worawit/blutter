@@ -6,6 +6,32 @@ class DartClass;
 class DartApp;
 struct VarItem;
 
+struct FnParam {
+	DartAbstractType* type{ nullptr };
+	std::string name;
+	bool isRequired{ false };
+
+	explicit FnParam(DartAbstractType* type, std::string name, bool isRequired)
+		: type(type), name(std::move(name)), isRequired(isRequired) {}
+};
+
+struct DartFunctionSignature
+{
+	DartAbstractType* ReturnType() const { return returnType; }
+
+	int NumParam() const { return params.size(); }
+	int NumOptionalParam() const { return numOptionalParam; }
+	bool HasNamedParam() const { return hasNamedParam; }
+	std::vector<FnParam>& Params() { return params; }
+	FnParam& Param(int i) { return params[i]; }
+
+	DartAbstractType* returnType;
+	//typeParams;
+	std::vector<FnParam> params;
+	int numOptionalParam;
+	bool hasNamedParam;
+};
+
 class DartFunction : public DartFnBase
 {
 public:
@@ -48,6 +74,14 @@ public:
 	bool IsAbstract() const { return is_abstract; }
 	bool IsAsync() const    { return is_async; }
 
+	DartFunctionSignature& Signature() { return signature; }
+	int NumParam() const { return signature.NumParam(); }
+	int FirstParamOffset() const { return NumParam() * sizeof(void*) + sizeof(void*); }
+	int NumOptionalParam() const { return signature.NumOptionalParam(); }
+	bool HasNamedParam() const { return signature.HasNamedParam(); }
+	std::vector<FnParam>& Params() { return signature.Params(); }
+	FnParam& Param(int i) { return signature.Param(i); }
+
 	void SetAnalyzedData(std::unique_ptr<AnalyzedFnData> data);
 	AnalyzedFnData* GetAnalyzedData() { return analyzedData.get(); }
 
@@ -72,6 +106,7 @@ private:
 	uint64_t morphic_addr; // Monomorphic entry point (used for check class id before normal entry point)
 	//uint32_t code_size; // code size
 
+	DartFunctionSignature signature;
 	std::unique_ptr<AnalyzedFnData> analyzedData;
 
 	friend class DartApp;

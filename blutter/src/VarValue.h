@@ -53,20 +53,27 @@ struct VarStorage {
 using ValueType = int32_t;
 
 struct VarInteger;
+struct VarParam;
 struct VarValue {
 	// use Dart class id to determine what the variable type is
 	// custom type use negative value
 	enum CustomTypeId : int32_t {
-		Expression = -1,
-		TaggedCid = -2,
-		NativeInt = -3,
-		NativeDouble = -4,
+		Expression = -1000,
+		TaggedCid,
+		NativeInt,
+		NativeDouble,
+		Parameter, // call parameter (argument)
+		ArgsDesc,
+		// it will a number of passing named parameter. no use after loading all named parameters but some function stores it into stack without use.
+		// so, we need it to suppress an error about use without define.
+		CurrNumNameParam,
 	};
 
-	VarValue(ValueType typeId, bool hasValue) : typeId(typeId), hasValue(hasValue) {}
+	VarValue(ValueType typeId, bool hasValue = false) : typeId(typeId), hasValue(hasValue) {}
 	//VarValue() : kind(Unknown), hasValue(false) {}
 	virtual ~VarValue() {}
-	virtual std::string ToString() = 0;// { return "unknown"; }
+	//virtual std::string ToString() = 0;
+	virtual std::string ToString() { return "unknown"; }
 	bool HasValue() const { return hasValue; }
 	virtual ValueType TypeId() { return typeId; }
 	ValueType RawTypeId() const { return typeId; }
@@ -76,6 +83,10 @@ struct VarValue {
 	VarInteger* AsInteger() {
 		ASSERT(RawTypeId() == dart::kIntegerCid);
 		return reinterpret_cast<VarInteger*>(this);
+	}
+	VarParam* AsParam() {
+		ASSERT(typeId == Parameter);
+		return reinterpret_cast<VarParam*>(this);
 	}
 
 	ValueType typeId;
@@ -101,7 +112,7 @@ struct VarInteger : public VarValue {
 	explicit VarInteger(int64_t val, ValueType intTypeId = dart::kIntegerCid) : VarValue(dart::kIntegerCid, true), intTypeId(intTypeId), val(val) {}
 	explicit VarInteger(ValueType intTypeId = dart::kIntegerCid) : VarValue(dart::kIntegerCid, false), intTypeId(intTypeId), val(0) {}
 	virtual std::string ToString() { return std::to_string(Value()); }
-	int64_t Value() { return (intTypeId == dart::kSmiCid) ? val >> dart::kSmiTagSize : val; }
+	int64_t Value() const { return (intTypeId == dart::kSmiCid) ? val >> dart::kSmiTagSize : val; }
 
 	ValueType intTypeId;
 	int64_t val;
@@ -278,26 +289,31 @@ struct VarCid : public VarValue {
 	int cid;
 };
 
+struct VarParam : public VarValue {
+	explicit VarParam(int idx) : VarValue(Parameter, false), idx(idx) {}
+	int idx;
+};
 
 struct VarItem {
 	explicit VarItem() : storage(VarStorage::Uninit) {}
 	explicit VarItem(VarStorage storage) : storage(storage) {}
-	explicit VarItem(VarStorage storage, std::shared_ptr<VarValue> val) : storage(storage), val(val) {}
-	explicit VarItem(VarStorage storage, VarValue* val) : storage(storage), val(std::shared_ptr<VarValue>(val)) {}
+	explicit VarItem(VarStorage storage, std::unique_ptr<VarValue> val) : storage(storage), val(std::move(val)) {}
+	explicit VarItem(VarStorage storage, VarValue* val) : storage(storage), val(std::unique_ptr<VarValue>(val)) {}
 	// register storage is common and also special type
-	explicit VarItem(A64::Register reg, std::shared_ptr<VarValue> val) : storage(VarStorage(reg)), val(val) {}
-	explicit VarItem(A64::Register reg, VarValue* val) : storage(VarStorage(reg)), val(std::shared_ptr<VarValue>(val)) {}
+	explicit VarItem(A64::Register reg, std::unique_ptr<VarValue> val) : storage(VarStorage(reg)), val(std::move(val)) {}
+	explicit VarItem(A64::Register reg, VarValue* val) : storage(VarStorage(reg)), val(std::unique_ptr<VarValue>(val)) {}
 
 	VarStorage Storage() const { return storage; }
 	std::string StorageName() { return storage.Name(); }
 
 	template <typename T, typename = std::enable_if<std::is_base_of<VarValue, T>::value>>
 	T* Get() const { return reinterpret_cast<T*>(val.get()); }
-	std::shared_ptr<VarValue> Value() const { return val; }
+	VarValue* Value() const { return val.get(); }
+	std::unique_ptr<VarValue> TakeValue() { return std::move(val); }
 	std::string ValueString() const { return val ? val->ToString() : "BUG_NO_ASSIGN_VALUE"; }
 	ValueType ValueTypeId() const { return val->RawTypeId(); }
-	VarItem* MoveTo(VarStorage storage) { return new VarItem(storage, this->val); }
-	VarItem* MoveTo(A64::Register reg) { return new VarItem(VarStorage::NewRegister(reg), this->val); }
+	VarItem* MoveTo(VarStorage storage) { return new VarItem(storage, std::move(val)); }
+	VarItem* MoveTo(A64::Register reg) { return new VarItem(VarStorage::NewRegister(reg), std::move(val)); }
 
 	// TODO: more clever name or value when it is known type
 	std::string Name();
@@ -305,5 +321,5 @@ struct VarItem {
 
 	VarStorage storage;
 	//VarType type;
-	std::shared_ptr<VarValue> val;
+	std::unique_ptr<VarValue> val;
 };
