@@ -62,7 +62,8 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 		case dart::kCodeCid: {
 			const auto& code = dart::Code::Cast(obj);
 			auto stub = app.GetFunction(code.EntryPoint() - app.base());
-			return new VarStub(*stub->AsStub());
+			ASSERT(stub);
+			return new VarFunctionCode(*stub);
 		}
 		case dart::kFieldCid: {
 			const auto& field = dart::Field::Cast(obj);
@@ -115,13 +116,17 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 		}
 		case dart::kSubtypeTestCacheCid:
 			return new VarSubtypeTestCache();
+		case dart::kLibraryPrefixCid:
+			// TODO: handle LibraryPrefix object
 		case dart::kInstanceCid:
 			return new VarInstance(app.GetClass(dart::kInstanceCid));
 		}
 
 		if (obj.IsInstance()) {
 			auto dartCls = app.GetClass(obj.GetClassId());
-			RELEASE_ASSERT(dartCls->Id() >= dart::kNumPredefinedCids);
+			if (dartCls->Id() < dart::kNumPredefinedCids) {
+				std::cerr << std::format("Unhandle predefined class {} ({})\n", dartCls->Name(), dartCls->Id());
+			}
 			return new VarInstance(dartCls);
 		}
 
@@ -2598,15 +2603,20 @@ ILWBResult FunctionAnalyzer::processWriteBarrier(AsmInstruction insn)
 		INSN_ASSERT(insn.id() == ARM64_INS_LDR);
 		INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
 		INSN_ASSERT(insn.ops[1].mem.base == CSREG_DART_THR);
-		const auto existed = std::find(std::begin(AOT_Thread_write_barrier_wrappers_thread_offset), 
-			std::end(AOT_Thread_write_barrier_wrappers_thread_offset), insn.ops[1].mem.disp) != std::end(AOT_Thread_write_barrier_wrappers_thread_offset);
-		INSN_ASSERT(existed);
+		if (insn.ops[1].mem.disp == AOT_Thread_array_write_barrier_entry_point_offset) {
+			isArray = true;
+		}
+		else {
+			const auto existed = std::find(std::begin(AOT_Thread_write_barrier_wrappers_thread_offset),
+				std::end(AOT_Thread_write_barrier_wrappers_thread_offset), insn.ops[1].mem.disp) != std::end(AOT_Thread_write_barrier_wrappers_thread_offset);
+			INSN_ASSERT(existed);
+			isArray = false;
+		}
 		const auto epReg = insn.ops[0].reg;
 		++insn;
 
 		INSN_ASSERT(insn.id() == ARM64_INS_BLR);
 		INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
-		isArray = false;
 	}
 
 	if (spill_lr) {

@@ -135,11 +135,11 @@ struct VarString : public VarValue {
 	std::string str;
 };
 
-struct VarStub : public VarValue {
-	explicit VarStub(DartStub& stub) : VarValue(dart::kFunctionCid, true), stub(stub) {}
-	virtual std::string ToString() { return stub.FullName(); }
+struct VarFunctionCode : public VarValue {
+	explicit VarFunctionCode(DartFnBase& fn) : VarValue(dart::kFunctionCid, true), fn(fn) {}
+	virtual std::string ToString() { return fn.FullName(); }
 
-	DartStub& stub;
+	DartFnBase& fn;
 };
 
 struct VarField : public VarValue {

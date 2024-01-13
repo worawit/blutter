@@ -102,42 +102,6 @@ DartFunction::DartFunction(DartClass& cls, const dart::FunctionPtr ptr) : DartFn
 		}
 	}
 
-	// Note: Signature is dropped in most function
-	//const auto& sig = dart::FunctionType::Handle(zone, func.signature());
-	//if (!sig.IsNull()) {
-	//	// TODO: extract info
-	//	const auto& result_type = dart::AbstractType::Handle(sig.result_type());
-	//	// function type paramaters
-	//	/*const auto& type_params = dart::TypeParameters::Handle(zone, sig.type_parameters());
-	//	if (!type_params.IsNull()) {
-	//		type_params.Print(dart::Thread::Current(), zone, false, 0, dart::Object::kScrubbedName, &buffer);
-	//	}*/
-	//	//sig.PrintParameters(dart::Thread::Current(), zone, dart::Object::kScrubbedName, &buffer);
-	//	
-	//	const intptr_t num_params = sig.NumParameters();
-	//	const intptr_t num_fixed_params = sig.num_fixed_parameters();
-	//	const intptr_t num_opt_pos_params = sig.NumOptionalPositionalParameters();
-	//	const intptr_t num_opt_named_params = sig.NumOptionalNamedParameters();
-	//	const intptr_t num_opt_params = num_opt_pos_params + num_opt_named_params;
-
-	//	auto& dname = dart::String::Handle(zone);
-	//	for (intptr_t i = 0; i < num_params; i++) {
-	//		auto paramTypePtr = sig.ParameterTypeAt(i);
-
-	//		auto isRequired = false;
-	//		std::string name;
-
-	//		if (num_opt_named_params > 0 && i >= num_fixed_params) {
-	//			if (sig.IsRequiredAt(i))
-	//				isRequired = true;
-	//			dname = sig.ParameterNameAt(i);
-	//			name = dname.ToCString();
-	//		}
-
-	//		params.push_back(FnParam{ nullptr, std::move(name), isRequired });
-	//	}
-	//}
-
 	// TODO:
 	// more info: https://mrale.ph/dartvm/compiler/exceptions.html
 	//auto& catchData = dart::TypedData::Handle(zone, code.catch_entry_moves_maps());

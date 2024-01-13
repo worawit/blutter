@@ -616,7 +616,7 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		const auto& libPrefix = dart::LibraryPrefix::Cast(obj);
 		const auto& name = dart::String::Handle(libPrefix.name());
 		RELEASE_ASSERT(libPrefix.num_imports() == 1);
-		// don't know what impoter is
+		// don't know what importer is
 		//const auto& importer = dart::Library::Handle(libPrefix.importer());
 		const auto& imports = dart::Array::Handle(libPrefix.imports());
 		const auto& importObj = dart::Object::Handle(imports.At(0));
