@@ -2240,24 +2240,40 @@ ILResult FunctionAnalyzer::processInstanceofNoTypeArgumentInstr(AsmInstruction i
 		INSN_ASSERT(typeCheckCid == 0 || typeCheckCid == vtype->type.Class().Id());
 		insn += objPoolInstr.insCnt;
 
+		auto test_ep_reg = ARM64_REG_INVALID;
+		if (insn.id() == ARM64_INS_LDUR) {
+			INSN_ASSERT(insn.ops[1].mem.base == ToCapstoneReg(dart::TypeTestABI::kDstTypeReg));
+			INSN_ASSERT(insn.ops[1].mem.disp == AOT_AbstractType_type_test_stub_entry_point_offset - dart::kHeapObjectTag);
+			test_ep_reg = insn.ops[0].reg;
+			++insn;
+		}
+
 		// kSubtypeTestCacheReg from PP
 		const auto objPoolInstr2 = getObjectPoolInstruction(insn);
 		INSN_ASSERT(objPoolInstr2.dstReg == A64::Register{ dart::TypeTestABI::kSubtypeTestCacheReg });
 		INSN_ASSERT(objPoolInstr2.item.Value()->RawTypeId() == dart::kNullCid);
 		insn += objPoolInstr2.insCnt;
 
-		INSN_ASSERT(insn.id() == ARM64_INS_BL);
+		if (test_ep_reg == ARM64_REG_INVALID) {
+			INSN_ASSERT(insn.id() == ARM64_INS_BL);
+			auto dartFn = app.GetFunction(insn.ops[0].imm);
+			auto dartStub = dartFn->AsStub();
+			auto typeName = dartStub->Name();
+			if (typeCheckCid == app.DartIntCid()) {
+				INSN_ASSERT(dartStub->kind == DartStub::TypeCheckStub);
+				INSN_ASSERT(typeName == "int" || typeName == "int?");
+			}
+			else { // typeCheckCid == dart::kNumberCid || typeCheckCid == 0 (object)
+				INSN_ASSERT(typeName == vtype->ToString() || dartStub->kind == DartStub::DefaultTypeTestStub);
+			}
+		}
+		else {
+			INSN_ASSERT(insn.id() == ARM64_INS_BLR);
+			INSN_ASSERT(insn.ops[0].reg == test_ep_reg);
+		}
+
 		INSN_ASSERT(insn.NextAddress() == done_addr);
-		auto dartFn = app.GetFunction(insn.ops[0].imm);
-		auto dartStub = dartFn->AsStub();
-		auto typeName = dartStub->Name();
-		if (typeCheckCid == app.DartIntCid()) {
-			INSN_ASSERT(dartStub->kind == DartStub::TypeCheckStub);
-			INSN_ASSERT(typeName == "int" || typeName == "int?");
-		}
-		else { // typeCheckCid == dart::kNumberCid || typeCheckCid == 0 (object)
-			INSN_ASSERT(typeName == vtype->ToString() || dartStub->kind == DartStub::DefaultTypeTestStub);
-		}
+
 		return ILResult{ insn.ptr(), std::make_unique<TestTypeInstr>(AddrRange(insn0_addr, insn.NextAddress()), A64::Register{ srcReg }, objPoolInstr.item.Get<VarType>()->ToString()) };
 	}
 
@@ -2359,17 +2375,39 @@ ILResult FunctionAnalyzer::processBoxInt64Instr(AsmInstruction insn)
 		if (insn.id() == ARM64_INS_CMP && insn.ops[0].reg == in_reg && insn.ops[1].reg == out_reg && insn.ops[1].shift.type == ARM64_SFT_ASR && insn.ops[1].shift.value == dart::kSmiTagSize) {
 			// branch if integer value is fit in 31 bits
 			++insn;
-			ASSERT(insn.id() == ARM64_INS_B && insn.cc() == ARM64_CC_EQ);
+
+			INSN_ASSERT(insn.id() == ARM64_INS_B && insn.cc() == ARM64_CC_EQ);
 			const auto contAddr = insn.ops[0].imm;
-
 			++insn;
-			ASSERT(insn.id() == ARM64_INS_BL);
-			auto stub = app.GetFunction(insn.ops[0].imm);
-			ASSERT(stub->IsStub());
-			const auto stubKind = reinterpret_cast<DartStub*>(stub)->kind;
-			INSN_ASSERT(stubKind == DartStub::AllocateMintSharedWithoutFPURegsStub || stubKind == DartStub::AllocateMintSharedWithFPURegsStub);
 
-			++insn;
+			const auto assertAllocateMintStub = [&](DartFnBase* stub) {
+				INSN_ASSERT(stub->IsStub());
+				const auto stubKind = reinterpret_cast<DartStub*>(stub)->kind;
+				INSN_ASSERT(stubKind == DartStub::AllocateMintSharedWithoutFPURegsStub || stubKind == DartStub::AllocateMintSharedWithFPURegsStub);
+			};
+
+			if (insn.id() == ARM64_INS_BL) {
+				assertAllocateMintStub(app.GetFunction(insn.ops[0].imm));
+				++insn;
+			}
+			else {
+				const auto objPoolInstr = getObjectPoolInstruction(insn);
+				INSN_ASSERT(objPoolInstr.insCnt > 0);
+				INSN_ASSERT(objPoolInstr.dstReg == A64::Register{ dart::CODE_REG });
+				INSN_ASSERT(objPoolInstr.item.ValueTypeId() == dart::kFunctionCid);
+				assertAllocateMintStub(&objPoolInstr.item.Get<VarFunctionCode>()->fn);
+				insn += objPoolInstr.insCnt;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_LDUR);
+				INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
+				INSN_ASSERT(insn.ops[1].mem.base == ToCapstoneReg(dart::CODE_REG) && insn.ops[1].mem.disp == AOT_Code_entry_point_offset[(int)dart::CodeEntryKind::kNormal] - dart::kHeapObjectTag);
+				++insn;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_BLR);
+				INSN_ASSERT(insn.ops[0].reg == CSREG_DART_LR);
+				++insn;
+			}
+
 			INSN_ASSERT(insn.id() == ARM64_INS_STUR);
 			INSN_ASSERT(insn.ops[0].reg == in_reg);
 			INSN_ASSERT(insn.ops[1].mem.base == out_reg && insn.ops[1].mem.disp == dart::Mint::value_offset() - dart::kHeapObjectTag);
