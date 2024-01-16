@@ -292,6 +292,7 @@ void DartDumper::DumpCode(const char* out_dir)
 			for (auto dartFn : dartCls->Functions()) {
 				dartFn->PrintHead(of);
 
+#ifndef NO_CODE_ANALYSIS
 				// use as app is loaded at zero
 				if (dartFn->Size() > 0) {
 					auto& asmTexts = dartFn->GetAnalyzedData()->asmTexts.Data();
@@ -354,6 +355,7 @@ void DartDumper::DumpCode(const char* out_dir)
 							of << std::format("{:#x}: {}  ; {}\n", asmText.addr, &asmText.text[0], extra);
 					}
 				}
+#endif // NO_CODE_ANALYSIS
 
 				dartFn->PrintFoot(of);
 			}

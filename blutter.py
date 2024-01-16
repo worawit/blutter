@@ -32,7 +32,7 @@ def find_lib_files(indir: str):
     
     return os.path.abspath(app_file), os.path.abspath(flutter_file)
 
-def find_compat_macro(dart_version: str):
+def find_compat_macro(dart_version: str, no_analysis: bool):
     macros = []
     include_path = os.path.join(PKG_INC_DIR, f'dartvm{dart_version}')
     vm_path = os.path.join(include_path, 'vm')
@@ -58,6 +58,16 @@ def find_compat_macro(dart_version: str):
         if mm.find(b'class SharedClassTable {') != -1:
             macros.append('-DHAS_SHARED_CLASS_TABLE=1')
     
+    with open(os.path.join(vm_path, 'stub_code_list.h'), 'rb') as f:
+        mm = mmap.mmap(f.fileno(), 0, access = mmap.ACCESS_READ)
+        # Add InitLateStaticField and InitLateFinalStaticField stub
+        # https://github.com/dart-lang/sdk/commit/37d45743e11970f0eacc0ec864e97891347185f5
+        if mm.find(b'V(InitLateStaticField)') == -1:
+            macros.append('-DNO_INIT_LATE_STATIC_FIELD=1')
+    
+    if no_analysis:
+        macros.append('-DNO_CODE_ANALYSIS=1')
+    
     return macros
 
 def cmake_blutter(blutter_name: str, dartlib_name: str, macros: list):
@@ -76,7 +86,7 @@ def cmake_blutter(blutter_name: str, dartlib_name: str, macros: list):
     subprocess.run([NINJA_CMD], cwd=builddir, check=True)
     subprocess.run([CMAKE_CMD, '--install', '.'], cwd=builddir, check=True)
 
-def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool):
+def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
     libapp_file, libflutter_file = find_lib_files(indir)
 
     # getting dart version
@@ -88,6 +98,8 @@ def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool):
     from dartvm_fetch_build import fetch_and_build, get_dartlib_name
     dartlib_name = get_dartlib_name(dart_version, arch, os_name)
     blutter_name = f'blutter_{dartlib_name}'
+    if no_analysis:
+        blutter_name += '_no-analysis'
     blutter_file = os.path.join(BIN_DIR, blutter_name) + ('.exe' if os.name == 'nt' else '')
 
     if not os.path.isfile(blutter_file):
@@ -104,7 +116,7 @@ def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool):
 
     # creating Visual Studio solution overrides building
     if create_vs_sln:
-        macros = find_compat_macro(dart_version)
+        macros = find_compat_macro(dart_version, no_analysis)
         blutter_dir = os.path.join(SCRIPT_DIR, 'blutter')
         dbg_output_path = os.path.abspath(os.path.join(outdir, 'out'))
         dbg_cmd_args = f'-i {libapp_file} -o {dbg_output_path}'
@@ -116,7 +128,7 @@ def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool):
     else:
         if rebuild_blutter:
             # do not use SDK path for checking source code because Blutter does not depended on it and SDK might be removed
-            macros = find_compat_macro(dart_version)
+            macros = find_compat_macro(dart_version, no_analysis)
             cmake_blutter(blutter_name, dartlib_name, macros)
             assert os.path.isfile(blutter_file), "Build complete but cannot find Blutter binary: " + blutter_file
 
@@ -133,6 +145,7 @@ if __name__ == "__main__":
     parser.add_argument('outdir', help='An output directory')
     parser.add_argument('--rebuild', action='store_true', default=False, help='Force rebuild the Blutter executable')
     parser.add_argument('--vs-sln', action='store_true', default=False, help='Generate Visual Studio solution at <outdir>')
+    parser.add_argument('--no-analysis', action='store_true', default=False, help='Do not build with code analysis')
     args = parser.parse_args()
 
-    main(args.indir, args.outdir, args.rebuild, args.vs_sln)
+    main(args.indir, args.outdir, args.rebuild, args.vs_sln, args.no_analysis)

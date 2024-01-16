@@ -71,4 +71,10 @@ namespace dart {
 #  define HAS_INIT_ASYNC 1
 #endif
 
+// InitLateStaticFieldStub is implemented around Dart 2.16. Before that, only InitStaticFieldStub
+#ifdef NO_INIT_LATE_STATIC_FIELD
+#  define InitLateStaticFieldStub InitStaticFieldStub
+#  define InitLateFinalStaticFieldStub InitStaticFieldStub
+#endif
+
 #endif //PCH_H

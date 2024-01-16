@@ -4,6 +4,8 @@
 #include "VarValue.h"
 #include <source_location>
 
+#ifndef NO_CODE_ANALYSIS
+
 class InsnException
 {
 public:
@@ -258,7 +260,6 @@ static const AsmMatcherFn matcherFns[] = {
 	&FunctionAnalyzer::processCheckStackOverflowInstr,
 	&FunctionAnalyzer::processLoadValueInstr,
 	&FunctionAnalyzer::processDecompressPointerInstr,
-	//&FunctionAnalyzer::processPrologueParametersInstr,
 	&FunctionAnalyzer::processSaveRegisterInstr,
 	&FunctionAnalyzer::processLoadSavedRegisterInstr,
 	&FunctionAnalyzer::processInitAsyncInstr,
@@ -3042,3 +3043,5 @@ AsmTexts CodeAnalyzer::convertAsm(AsmInstructions& asm_insns)
 
 	return AsmTexts{ asm_texts, first_stack_limit_addr, max_param_stack_offset };
 }
+
+#endif // NO_CODE_ANALYSIS

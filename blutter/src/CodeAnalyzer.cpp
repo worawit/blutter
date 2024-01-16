@@ -2,6 +2,8 @@
 #include "CodeAnalyzer.h"
 #include "DartApp.h"
 
+#ifndef NO_CODE_ANALYSIS
+
 AnalyzedFnData::AnalyzedFnData(DartApp& app, DartFunction& dartFn, AsmTexts asmTexts)
 	: app(app), dartFn(dartFn), asmTexts(std::move(asmTexts))
 {
@@ -30,6 +32,8 @@ void CodeAnalyzer::AnalyzeAll()
 		}
 	}
 }
+
+#endif // NO_CODE_ANALYSIS
 
 std::string FnParamInfo::ToString() const
 {

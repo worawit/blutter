@@ -31,18 +31,24 @@ int main(int argc, char** argv)
 		app.ExitScope();
 
 		app.EnterScope();
+#ifndef NO_CODE_ANALYSIS
 		std::cout << "Analyzing the application\n";
 		CodeAnalyzer analyzer{ app };
 		analyzer.AnalyzeAll();
+#endif
 
 		DartDumper dumper{ app };
 		std::cout << "Dumping Object Pool\n";
 		dumper.DumpObjectPool((outDir / "pp.txt").string().c_str());
 		dumper.DumpObjects((outDir / "objs.txt").string().c_str());
+#ifndef NO_CODE_ANALYSIS
 		std::cout << "Generating application assemblies\n";
+#else
+		std::cout << "Generating application functions in asm folder\n";
+#endif
 		dumper.DumpCode((outDir / "asm").string().c_str());
 		dumper.Dump4Ida(outDir / "ida_script");
-		
+
 		std::cout << "Generating Frida script\n";
 		FridaWriter fwriter{ app };
 		fwriter.Create((outDir / "blutter_frida.js").string().c_str());
