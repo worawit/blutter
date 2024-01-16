@@ -81,14 +81,16 @@ constexpr arm64_reg CSREG_DART_WB_VALUE = ToCapstoneReg(dart::kWriteBarrierValue
 constexpr arm64_reg CSREG_DART_WB_SLOT = ToCapstoneReg(dart::kWriteBarrierSlotReg);
 constexpr arm64_reg CSREG_DART_THR = ToCapstoneReg(dart::THR);
 constexpr arm64_reg CSREG_DART_PP = ToCapstoneReg(dart::PP);
+#if defined(DART_COMPRESSED_POINTERS)
 constexpr arm64_reg CSREG_DART_HEAP = ToCapstoneReg(dart::HEAP_BITS);
+#endif
 constexpr arm64_reg CSREG_DART_TMP = ToCapstoneReg(dart::TMP);
 constexpr arm64_reg CSREG_DART_TMP2 = ToCapstoneReg(dart::TMP2);
 // Note: kTagReg is normally in wrapper function. can ignore it.
-constexpr arm64_reg CSREG_ALLOCATE_OBJ_TYPEARGS = ToCapstoneReg(dart::AllocateObjectABI::kTypeArgumentsReg);
-constexpr arm64_reg CSREG_ALLOCATE_CLOSURE_FUNCTION = ToCapstoneReg(dart::AllocateClosureABI::kFunctionReg);
-constexpr arm64_reg CSREG_ALLOCATE_CLOSURE_CONTEXT = ToCapstoneReg(dart::AllocateClosureABI::kContextReg);
-constexpr arm64_reg CSREG_ALLOCATE_CLOSURE_SCRATCH = ToCapstoneReg(dart::AllocateClosureABI::kScratchReg);
+//constexpr arm64_reg CSREG_ALLOCATE_OBJ_TYPEARGS = ToCapstoneReg(dart::AllocateObjectABI::kTypeArgumentsReg);
+//constexpr arm64_reg CSREG_ALLOCATE_CLOSURE_FUNCTION = ToCapstoneReg(dart::AllocateClosureABI::kFunctionReg);
+//constexpr arm64_reg CSREG_ALLOCATE_CLOSURE_CONTEXT = ToCapstoneReg(dart::AllocateClosureABI::kContextReg);
+//constexpr arm64_reg CSREG_ALLOCATE_CLOSURE_SCRATCH = ToCapstoneReg(dart::AllocateClosureABI::kScratchReg);
 
 const char* GetCsRegisterName(arm64_reg reg);
 

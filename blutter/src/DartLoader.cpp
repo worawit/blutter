@@ -42,7 +42,7 @@ static Dart_Isolate load_isolate(const uint8_t* isolate_snapshot_data, const uin
 	Dart_IsolateFlags flags;
 	Dart_IsolateFlagsInitialize(&flags);
 	flags.is_system_isolate = false;
-	flags.snapshot_is_dontneed_safe = true;
+	//flags.snapshot_is_dontneed_safe = true; // Dart <= 2.14 has no this field
 	// dart 3 is always null safety
 	// null safety is enabled by default on Flutter 2.0 with Dart 2.12 (since April 2021)
 	auto pos = strstr((const char*)isolate_snapshot_data + 0x30, "null-safety");

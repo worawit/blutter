@@ -725,7 +725,7 @@ std::string DartDumper::dumpInstanceFields(dart::Object& obj, DartClass& dartCls
 		else if (offset != dartCls.TypeArgumentsOffset()) {
 			// compressed object ptr
 			auto p = reinterpret_cast<dart::CompressedObjectPtr*>(ptr + offset);
-			if (*p != dart::CompressedObjectPtr(0)) {
+			if (*p != dart::CompressedObjectPtr(nullptr)) {
 				if (p->IsHeapObject()) {
 					auto objPtr2 = p->Decompress(app.heap_base());
 					if (objPtr2 != nullptr && objPtr2.GetClassId() != dart::kNullCid) {

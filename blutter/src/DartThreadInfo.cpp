@@ -44,7 +44,7 @@ static void initThreadOffsetNames()
 	//threadOffsetNames[dart::Thread::callback_stack_return_offset()] = "ffi_callback_stack_return"; // removed in Dart 3.1.0
 	threadOffsetNames[dart::Thread::exit_through_ffi_offset()] = "exit_through_ffi";
 	threadOffsetNames[dart::Thread::api_top_scope_offset()] = "api_top_scope";
-	threadOffsetNames[dart::Thread::double_truncate_round_supported_offset()] = "double_truncate_round_supported";
+	//threadOffsetNames[dart::Thread::double_truncate_round_supported_offset()] = "double_truncate_round_supported";
 	//threadOffsetNames[dart::Thread::tsan_utils_offset()] = "tsan_utils";
 	threadOffsetNames[dart::Thread::isolate_offset()] = "isolate";
 	threadOffsetNames[dart::Thread::isolate_group_offset()] = "isolate_group";

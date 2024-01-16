@@ -8,7 +8,7 @@ if (NOT ${DARTLIB} MATCHES "^dartvm")
 	message(FATAL_ERROR "DARTLIB name should start with 'dartvm'")
 endif()
 
-set(BINNAME "${PROJECT_NAME}_${DARTLIB}")
+set(BINNAME "${PROJECT_NAME}_${DARTLIB}${NAME_SUFFIX}")
 
 set(CMAKE_INSTALL_PREFIX "${PROJECT_SOURCE_DIR}/../bin" CACHE PATH "" FORCE)
 
@@ -76,6 +76,12 @@ get_filename_component(FRIDA_TEMPLATE_DIR "${PROJECT_SOURCE_DIR}/../scripts/" AB
 set(defines NDEBUG FRIDA_TEMPLATE_DIR="${FRIDA_TEMPLATE_DIR}")
 if (OLD_MAP_SET_NAME)
 	set(defines ${defines} OLD_MAP_SET_NAME)
+	if (OLD_MAP_NO_IMMUTABLE)
+		set(defines ${defines} OLD_MAP_NO_IMMUTABLE)
+	endif()
+endif()
+if (NO_LAST_INTERNAL_ONLY_CID)
+	set(defines ${defines} NO_LAST_INTERNAL_ONLY_CID)
 endif()
 if (HAS_SHARED_CLASS_TABLE)
 	set(defines ${defines} HAS_SHARED_CLASS_TABLE)

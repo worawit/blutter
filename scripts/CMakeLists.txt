@@ -57,7 +57,7 @@ set_target_properties(${LIBNAME} PROPERTIES
 if (${TARGET_OS} STREQUAL "android")
 	set(target_os "DART_TARGET_OS_ANDROID")
 	# Note: DART_COMPRESSED_POINTERS should be from the binary
-	set(dart_pointers "DART_COMPRESSED_POINTERS")
+	#set(dart_pointers "DART_COMPRESSED_POINTERS")
 else()
 	set(target_os "DART_TARGET_OS_MACOS_IOS")
 endif()
@@ -66,6 +66,9 @@ if (${TARGET_ARCH} STREQUAL "arm64")
 	set(target_arch "TARGET_ARCH_ARM64")
 else()
 	set(target_arch "TARGET_ARCH_X64")
+endif()
+if (${COMPRESSED_PTRS})
+	set(dart_pointers "DART_COMPRESSED_POINTERS")
 endif()
 
 # DART_TARGET_OS_WINDOWS_UWP can be used to disable unused features on Windows such as native symbols lookup, Certificate Store

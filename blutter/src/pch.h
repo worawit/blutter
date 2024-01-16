@@ -40,16 +40,32 @@ PRAGMA_WARNING(pop)
 #ifdef OLD_MAP_SET_NAME
 namespace dart {
 	using Map = LinkedHashMap;
-	using ConstMap = ImmutableLinkedHashMap;
 	using Set = LinkedHashSet;
+#ifdef OLD_MAP_NO_IMMUTABLE
+	using ConstMap = LinkedHashMap;
+	using ConstSet = LinkedHashSet;
+#else
+	using ConstMap = ImmutableLinkedHashMap;
 	using ConstSet = ImmutableLinkedHashSet;
+#endif
 	
 	enum ClassIdX : intptr_t {
 		kMapCid = kLinkedHashMapCid,
-		kConstMapCid = kImmutableLinkedHashMapCid,
 		kSetCid = kLinkedHashSetCid,
+#ifdef OLD_MAP_NO_IMMUTABLE
+		kConstMapCid = kLinkedHashMapCid,
+		kConstSetCid = kLinkedHashSetCid,
+#else
+		kConstMapCid = kImmutableLinkedHashMapCid,
 		kConstSetCid = kImmutableLinkedHashSetCid,
+#endif
 	};
+};
+#endif
+
+#ifdef NO_LAST_INTERNAL_ONLY_CID
+namespace dart {
+	constexpr intptr_t kLastInternalOnlyCid = kUnwindErrorCid;
 };
 #endif
 

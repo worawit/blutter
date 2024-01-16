@@ -12,7 +12,7 @@ from elftools.elf.enums import ENUM_E_MACHINE
 from elftools.elf.sections import SymbolTableSection
 
 # TODO: support both ELF and Mach-O file
-def extract_snapshot_hash(libapp_file):
+def extract_snapshot_hash_flags(libapp_file):
     with open(libapp_file, 'rb') as f:
         elf = ELFFile(f)
         # find "_kDartVmSnapshotData" symbol
@@ -22,8 +22,10 @@ def extract_snapshot_hash(libapp_file):
         assert sym['st_size'] > 128
         f.seek(sym['st_value']+20)
         snapshot_hash = f.read(32).decode()
+        data = f.read(256) # should be enough
+        flags = data[:data.index(b'\0')].decode().strip().split(' ')
     
-    return snapshot_hash
+    return snapshot_hash, flags
 
 def extract_libflutter_info(libflutter_file):
     with open(libflutter_file, 'rb') as f:
@@ -101,8 +103,9 @@ def get_dart_commit(url):
     return commit_id, dart_version
 
 def extract_dart_info(libapp_file: str, libflutter_file: str):
-    snapshot_hash = extract_snapshot_hash(libapp_file)
+    snapshot_hash, flags = extract_snapshot_hash_flags(libapp_file)
     #print('snapshot hash', snapshot_hash)
+    #print(flags)
 
     engine_ids, dart_version, arch, os_name = extract_libflutter_info(libflutter_file)
     # print('possible engine ids', engine_ids)
@@ -120,7 +123,7 @@ def extract_dart_info(libapp_file: str, libflutter_file: str):
         #assert dart_version == dart_version_sdk
     
     # TODO: os (android or ios) and architecture (arm64 or x64)
-    return dart_version, snapshot_hash, arch, os_name
+    return dart_version, snapshot_hash, flags, arch, os_name
 
 
 if __name__ == "__main__":

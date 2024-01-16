@@ -67,9 +67,11 @@ for name in extra_files:
 hdrs.append(os.path.join(BASEDIR, 'vm/version.h'))
 
 # other libraries
-for lib in ('async', 'core', 'developer', 'ffi', 'isolate', 'math', 'typed_data', 'vmservice'):
-    srcs = get_default_src_files(os.path.join(BASEDIR, 'lib', lib+'_sources.gni'))
-    cc_srcs.extend([ os.path.join(BASEDIR, 'lib', src) for src in srcs if src.endswith('.cc') ])
+for lib in ('async', 'core', 'developer', 'ffi', 'isolate', 'math', 'typed_data', 'vmservice', 'internal'):
+    gni_file = os.path.join(BASEDIR, 'lib', lib+'_sources.gni')
+    if os.path.isfile(gni_file):
+        srcs = get_default_src_files(gni_file)
+        cc_srcs.extend([ os.path.join(BASEDIR, 'lib', src) for src in srcs if src.endswith('.cc') ])
 
 cc_srcs.extend(get_src_from_path(BASEDIR+'/third_party/double-conversion/src'))
 
