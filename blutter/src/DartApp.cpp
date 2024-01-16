@@ -467,10 +467,10 @@ void DartApp::findFunctionInHeap()
 			if (!obj.IsType()) {
 #ifdef HAS_RECORD_TYPE
 				if (!obj.IsRecordType()) {
-					throw std::runtime_error("TestType is not Type or RecordType");
+					std::cerr << std::format("TestType is not for Type or RecordType, but for {}\n", classes[obj.GetClassId()]->Name());
 				}
 #else
-				throw std::runtime_error("TestType is not Type");
+				std::cerr << std::format("TestType is not for Type, but for {}\n", classes[obj.GetClassId()]->Name());
 #endif
 			}
 			if (stubs.contains(ep_offset))
