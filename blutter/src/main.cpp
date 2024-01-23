@@ -20,7 +20,11 @@ int main(int argc, char** argv)
 		auto& libappPath = args::get(infile);
 
 		std::filesystem::path outDir{ args::get(outdir) };
-		std::filesystem::create_directory(outDir);
+		std::error_code ec;
+		if (!std::filesystem::create_directory(outDir, ec) && ec.value() != 0) {
+			std::cerr << "Failed to create output directory: " << ec.message() << "\n";
+			return 1;
+		}
 
 		DartApp app{ libappPath.c_str() };
 		std::cout << std::format("libapp is loaded at {:#x}\n", app.base());
