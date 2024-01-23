@@ -151,7 +151,7 @@ private:
 class AnalyzedFnData {
 public:
 	AnalyzedFnData(DartApp& app, DartFunction& dartFn, AsmTexts asmTexts);
-	void AddInstruction(std::unique_ptr<ILInstr> insn) {
+	void AddIL(std::unique_ptr<ILInstr> insn) {
 		il_insns.push_back(std::move(insn));
 	}
 

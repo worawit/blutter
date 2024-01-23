@@ -6,16 +6,6 @@
 struct AsmText;
 struct FnParams;
 
-struct AddrRange {
-	uint64_t start{ 0 };
-	uint64_t end{ 0 };
-
-	AddrRange() = default;
-	AddrRange(uint64_t start, uint64_t end) : start{ start }, end{ end } {}
-
-	bool Has(uint64_t addr) { return addr >= start && addr < end; }
-};
-
 class ILInstr {
 public:
 	enum ILKind {
@@ -113,7 +103,7 @@ public:
 
 class AllocateStackInstr : public ILInstr {
 public:
-	AllocateStackInstr(cs_insn* insn, uint32_t allocSize) : ILInstr(AllocateStack, insn), allocSize(allocSize) {}
+	AllocateStackInstr(AddrRange addrRange, uint32_t allocSize) : ILInstr(AllocateStack, addrRange), allocSize(allocSize) {}
 	AllocateStackInstr() = delete;
 	AllocateStackInstr(AllocateStackInstr&&) = delete;
 	AllocateStackInstr& operator=(const AllocateStackInstr&) = delete;
@@ -179,7 +169,7 @@ public:
 
 class DecompressPointerInstr : public ILInstr {
 public:
-	DecompressPointerInstr(cs_insn* insn, VarStorage dst) : ILInstr(DecompressPointer, insn), dst(dst) {}
+	DecompressPointerInstr(AddrRange addrRange, VarStorage dst) : ILInstr(DecompressPointer, addrRange), dst(dst) {}
 	DecompressPointerInstr() = delete;
 	DecompressPointerInstr(DecompressPointerInstr&&) = delete;
 	DecompressPointerInstr& operator=(const DecompressPointerInstr&) = delete;
@@ -194,7 +184,7 @@ protected:
 
 class SaveRegisterInstr : public ILInstr {
 public:
-	SaveRegisterInstr(cs_insn* insn, A64::Register srcReg) : ILInstr(SaveRegister, insn), srcReg(srcReg) {}
+	SaveRegisterInstr(AddrRange addrRange, A64::Register srcReg) : ILInstr(SaveRegister, addrRange), srcReg(srcReg) {}
 	SaveRegisterInstr() = delete;
 	SaveRegisterInstr(SaveRegisterInstr&&) = delete;
 	SaveRegisterInstr& operator=(const SaveRegisterInstr&) = delete;
@@ -209,7 +199,7 @@ protected:
 
 class RestoreRegisterInstr : public ILInstr {
 public:
-	RestoreRegisterInstr(cs_insn* insn, A64::Register dstReg) : ILInstr(RestoreRegister, insn), dstReg(dstReg) {}
+	RestoreRegisterInstr(AddrRange addrRange, A64::Register dstReg) : ILInstr(RestoreRegister, addrRange), dstReg(dstReg) {}
 	RestoreRegisterInstr() = delete;
 	RestoreRegisterInstr(RestoreRegisterInstr&&) = delete;
 	RestoreRegisterInstr& operator=(const RestoreRegisterInstr&) = delete;
@@ -266,7 +256,7 @@ protected:
 
 class CallInstr : public ILInstr {
 public:
-	CallInstr(cs_insn* insn, DartFnBase* fnBase, uint64_t addr) : ILInstr(Call, insn), fnBase(fnBase), addr(addr) {}
+	CallInstr(AddrRange addrRange, DartFnBase* fnBase, uint64_t addr) : ILInstr(Call, addrRange), fnBase(fnBase), addr(addr) {}
 	CallInstr() = delete;
 	CallInstr(CallInstr&&) = delete;
 	CallInstr& operator=(const CallInstr&) = delete;
@@ -292,7 +282,7 @@ protected:
 
 class ReturnInstr : public ILInstr {
 public:
-	ReturnInstr(cs_insn* insn) : ILInstr(Return, insn) {}
+	ReturnInstr(AddrRange addrRange) : ILInstr(Return, addrRange) {}
 	ReturnInstr() = delete;
 	ReturnInstr(ReturnInstr&&) = delete;
 	ReturnInstr& operator=(const ReturnInstr&) = delete;
@@ -304,7 +294,7 @@ public:
 
 class BranchIfSmiInstr : public ILInstr {
 public:
-	BranchIfSmiInstr(cs_insn* insn, A64::Register objReg, int64_t branchAddr) : ILInstr(BranchIfSmi, insn), objReg(objReg), branchAddr(branchAddr) {}
+	BranchIfSmiInstr(AddrRange addrRange, A64::Register objReg, int64_t branchAddr) : ILInstr(BranchIfSmi, addrRange), objReg(objReg), branchAddr(branchAddr) {}
 	BranchIfSmiInstr() = delete;
 	BranchIfSmiInstr(BranchIfSmiInstr&&) = delete;
 	BranchIfSmiInstr& operator=(const BranchIfSmiInstr&) = delete;
@@ -471,8 +461,8 @@ public:
 
 class LoadFieldInstr : public ILInstr {
 public:
-	LoadFieldInstr(cs_insn* insn, A64::Register dstReg, A64::Register objReg, uint32_t offset)
-		: ILInstr(LoadField, insn), dstReg(dstReg), objReg(objReg), offset(offset) {}
+	LoadFieldInstr(AddrRange addrRange, A64::Register dstReg, A64::Register objReg, uint32_t offset)
+		: ILInstr(LoadField, addrRange), dstReg(dstReg), objReg(objReg), offset(offset) {}
 	LoadFieldInstr() = delete;
 	LoadFieldInstr(LoadFieldInstr&&) = delete;
 	LoadFieldInstr& operator=(const LoadFieldInstr&) = delete;

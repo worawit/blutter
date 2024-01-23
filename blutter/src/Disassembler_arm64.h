@@ -94,7 +94,7 @@ constexpr arm64_reg CSREG_DART_TMP2 = ToCapstoneReg(dart::TMP2);
 
 const char* GetCsRegisterName(arm64_reg reg);
 
-inline uint32_t GetCsRegSize(arm64_reg reg) {
+inline constexpr uint32_t GetCsRegSize(arm64_reg reg){
 	if (reg >= ARM64_REG_Q0 && reg <= ARM64_REG_Q31)
 		return 16;
 	if ((reg >= ARM64_REG_W0 && reg <= ARM64_REG_W30) || reg == ARM64_REG_WZR)
@@ -300,71 +300,11 @@ private:
 	Value reg;
 };
 
-//constexpr Register FromDartReg(dart::Register r) {
-//	switch (r) {
-//#define REG_CASE(n) case dart::Register::R##n: \
-//		return R##n
-//		REG_CASE(0); REG_CASE(1); REG_CASE(2); REG_CASE(3); REG_CASE(4);
-//		REG_CASE(5); REG_CASE(6); REG_CASE(7); REG_CASE(8); REG_CASE(9);
-//		REG_CASE(10); REG_CASE(11); REG_CASE(12); REG_CASE(13); REG_CASE(14);
-//		REG_CASE(15); REG_CASE(16); REG_CASE(17); REG_CASE(18); REG_CASE(19);
-//		REG_CASE(20); REG_CASE(21); REG_CASE(22); REG_CASE(23); REG_CASE(24);
-//		REG_CASE(25); REG_CASE(26); REG_CASE(27); REG_CASE(28); REG_CASE(29);
-//		REG_CASE(30);
-//#undef REG_CASE
-//	case dart::Register::CSP:
-//		return CSP;
-//	case dart::Register::ZR:
-//		return ZR;
-//	default:
-//		return kNoRegister;
-//	}
-//}
-
 constexpr auto ARGS_DESC_REG = Register{ dart::ARGS_DESC_REG };
 constexpr auto SP_REG = Register{ dart::SPREG };
 constexpr auto TMP_REG = Register{ dart::TMP };
 constexpr auto TMP2_REG = Register{ dart::TMP2 };
 constexpr auto NULL_REG = Register{ dart::NULL_REG };
-
-// map from capstone register
-//constexpr Register FromCsReg(arm64_reg r) {
-//	switch (r) {
-//#define REG_CASE(n) case ARM64_REG_X##n: \
-//	case ARM64_REG_W##n: \
-//		return R##n
-//		REG_CASE(0); REG_CASE(1); REG_CASE(2); REG_CASE(3); REG_CASE(4);
-//		REG_CASE(5); REG_CASE(6); REG_CASE(7); REG_CASE(8); REG_CASE(9);
-//		REG_CASE(10); REG_CASE(11); REG_CASE(12); REG_CASE(13); REG_CASE(14);
-//		REG_CASE(15); REG_CASE(16); REG_CASE(17); REG_CASE(18); REG_CASE(19);
-//		REG_CASE(20); REG_CASE(21); REG_CASE(22); REG_CASE(23); REG_CASE(24);
-//		REG_CASE(25); REG_CASE(26); REG_CASE(27); REG_CASE(28); REG_CASE(29);
-//		REG_CASE(30);
-//#undef REG_CASE
-//	case ARM64_REG_XZR:
-//	case ARM64_REG_WZR:
-//		return ZR;
-//	case ARM64_REG_SP:
-//		return SP_REG;
-//	case ARM64_REG_NZCV: // Condition Flags
-//		return NZCV;
-//#define REG_CASE(n) case ARM64_REG_V##n: \
-//	case ARM64_REG_Q##n: \
-//	case ARM64_REG_D##n: \
-//	case ARM64_REG_S##n: \
-//		return V##n
-//		REG_CASE(0); REG_CASE(1); REG_CASE(2); REG_CASE(3); REG_CASE(4);
-//		REG_CASE(5); REG_CASE(6); REG_CASE(7); REG_CASE(8); REG_CASE(9);
-//		REG_CASE(10); REG_CASE(11); REG_CASE(12); REG_CASE(13); REG_CASE(14);
-//		REG_CASE(15); REG_CASE(16); REG_CASE(17); REG_CASE(18); REG_CASE(19);
-//		REG_CASE(20); REG_CASE(21); REG_CASE(22); REG_CASE(23); REG_CASE(24);
-//		REG_CASE(25); REG_CASE(26); REG_CASE(27); REG_CASE(28); REG_CASE(29);
-//		REG_CASE(30); REG_CASE(31);
-//#undef REG_CASE
-//	default:
-//		return kNoRegister;
-//	}
-//}
 }; // namespace ARM64
 
 constexpr arm64_reg ToCapstoneReg(A64::Register r)
@@ -481,4 +421,115 @@ public:
 
 	const char* mnemonic() const { return insn->mnemonic; }
 	const char* op_str() const { return insn->op_str; }
+};
+
+struct AddrRange {
+	uint64_t start{ 0 };
+	uint64_t end{ 0 };
+
+	AddrRange() = default;
+	AddrRange(uint64_t start, uint64_t end) : start{ start }, end{ end } {}
+
+	bool Has(uint64_t addr) const { return addr >= start && addr < end; }
+};
+
+class AsmIterator {
+	cs_insn* insnStart;
+	cs_insn* insnEnd;
+	cs_insn* insn; // current instruction
+	cs_insn dummyInsnEnd;
+public:
+	AsmIterator(cs_insn* start, cs_insn* end) : insnStart(start), insnEnd(end), insn(insnStart) {
+		dummyInsnEnd.id = 0;
+		dummyInsnEnd.address = insnEnd->address + insnEnd->size;
+		dummyInsnEnd.size = 0;
+	}
+
+	AsmIterator(AsmIterator& rhs, int64_t addr) : insnStart(rhs.insnStart), insnEnd(rhs.insnEnd) {
+		const auto offset = (addr - rhs.insn->address) / 4;
+		insn = rhs.insn + offset;
+		dummyInsnEnd.id = 0;
+		dummyInsnEnd.address = rhs.dummyInsnEnd.address;
+		dummyInsnEnd.size = 0;
+	}
+
+	cs_insn* Current() { return insn; }
+	void SetCurrent(cs_insn* ins) { insn = ins; }
+	cs_insn* Next() {
+		//return (++*this).insn;
+		return operator++().insn;
+	}
+	// prefix increment
+	AsmIterator& operator++() {
+		ASSERT(insn != &dummyInsnEnd);
+		// assume no consecutive NOP
+		if (insn == insnEnd) {
+			insn = &dummyInsnEnd;
+		}
+		else {
+			++insn;
+			if (insn->id == ARM64_INS_NOP) {
+				if (insn == insnEnd)
+					insn = &dummyInsnEnd;
+				else
+					++insn;
+			}
+		}
+		return *this;
+	}
+	AsmIterator& operator--() {
+		--insn;
+		return *this;
+	}
+	AddrRange Wrap(int64_t start) {
+		return AddrRange(start, insn->address);
+	}
+	bool IsEnd() {
+		return insn == &dummyInsnEnd;
+	}
+
+	// libcapstone5 use MOV instead of MOVZ. so, we need this special function.
+	bool IsMovz() const {
+		return insn->id == ARM64_INS_MOVZ || (insn->id == ARM64_INS_MOV && op_count() == 2 && ops(1).type == ARM64_OP_IMM);
+	}
+	bool IsBranch(arm64_cc cond = ARM64_CC_INVALID) const { return insn->id == ARM64_INS_B && cc() == cond; }
+	bool IsDartArrayLoad() const {
+		if (writeback())
+			return false;
+		switch (insn->id) {
+		case ARM64_INS_LDUR:
+		case ARM64_INS_LDRB:
+			return true;
+		}
+		return false;
+	}
+	int GetLoadSize() const {
+		if (insn->id == ARM64_INS_LDRB || insn->id == ARM64_INS_LDURB)
+			return 1;
+		return GetCsRegSize(ops(0).reg);
+	}
+	bool IsDartArrayStore() const {
+		if (writeback())
+			return false;
+		switch (insn->id) {
+		case ARM64_INS_STUR:
+		case ARM64_INS_STRB:
+			return true;
+		}
+		return false;
+	}
+	int GetStoreSize() const {
+		if (insn->id == ARM64_INS_STRB || insn->id == ARM64_INS_STURB)
+			return 1;
+		return GetCsRegSize(ops(0).reg);
+	}
+
+	uint64_t address() const { return insn->address; }
+	uint16_t size() const { return insn->size; }
+	uint64_t NextAddress() const { return insn->address + insn->size; }
+	unsigned int id() const { return insn->id; }
+	arm64_cc cc() const { return insn->detail->arm64.cc; }
+	bool writeback() const { return insn->detail->arm64.writeback; }
+	cs_arm64_op& ops(int i) const { return insn->detail->arm64.operands[i]; }
+	uint8_t op_count() const { return insn->detail->arm64.op_count; }
 };
