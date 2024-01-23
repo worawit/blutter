@@ -40,11 +40,11 @@ def extract_libflutter_info(libflutter_file):
         section = elf.get_section_by_name('.rodata')
         data = section.data()
         
-        sha_hashes = re.findall(b'\x00([a-f\\d]{40})\x00', data)
-        assert len(sha_hashes) == 2
+        sha_hashes = re.findall(b'\x00([a-f\\d]{40})(?=\x00)', data)
         #print(sha_hashes)
         # all possible engine ids
         engine_ids = [ h.decode() for h in sha_hashes ]
+        assert len(engine_ids) == 2, f'found hashes {", ".join(engine_ids)}'
         
         # beta/dev version of flutter might not use stable dart version (we can get dart version from sdk with found engine_id)
         # support only stable
