@@ -2104,7 +2104,7 @@ std::unique_ptr<TestTypeInstr> FunctionAnalyzer::processInstanceofNoTypeArgument
 				INSN_ASSERT(typeName == "int" || typeName == "int?");
 			}
 			else { // typeCheckCid == dart::kNumberCid || typeCheckCid == 0 (object)
-				INSN_ASSERT(typeName == vtype->ToString() || dartStub->kind == DartStub::DefaultTypeTestStub);
+				INSN_ASSERT(typeName == vtype->ToString() || dartStub->kind == DartStub::DefaultTypeTestStub || dartStub->kind == DartStub::DefaultNullableTypeTestStub);
 			}
 			++insn;
 		}
@@ -2529,7 +2529,7 @@ std::unique_ptr<AllocateObjectInstr> FunctionAnalyzer::processTryAllocateObject(
 		INSN_ASSERT(insn.ops(1).mem.base == inst_reg && insn.ops(1).mem.disp == -1); // because of kHeapObjectTag
 		++insn;
 
-		const uint32_t cid = (tag >> 12) & 0xfffff;
+		const uint32_t cid = (tag >> dart::UntaggedObject::kClassIdTagPos) & ((1 << dart::UntaggedObject::kClassIdTagSize) - 1);
 		auto dartCls = app.GetClass(cid);
 		//INSN_ASSERT(dartCls->Size() < 0 || dartCls->Size() == inst_size);
 
