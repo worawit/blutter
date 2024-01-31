@@ -191,8 +191,8 @@ public:
 
 		// Aliases.
 		//SP = R15,
-		//TMP = R16,
-		//TMP2 = R17,
+		TMP = R16,
+		TMP2 = R17,
 		//IP0 = R16,
 		//IP1 = R17,
 		//THR = R26,

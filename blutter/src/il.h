@@ -14,9 +14,9 @@ public:
 		LeaveFrame,
 		AllocateStack,
 		CheckStackOverflow,
+		CallLeafRuntime,
 		LoadValue,
-		LoadObject,
-		LoadImm,
+		MoveReg,
 		DecompressPointer,
 		SaveRegister,
 		RestoreRegister,
@@ -133,6 +133,36 @@ protected:
 	uint64_t overflowBranch;
 };
 
+class MoveRegInstr : public ILInstr {
+public:
+	MoveRegInstr(AddrRange addrRange, A64::Register dstReg, A64::Register srcReg) : ILInstr(MoveReg, addrRange), dstReg(dstReg), srcReg(srcReg) {}
+	MoveRegInstr() = delete;
+	MoveRegInstr(MoveRegInstr&&) = delete;
+	MoveRegInstr& operator=(const MoveRegInstr&) = delete;
+
+	virtual std::string ToString() {
+		return std::format("{} = {}", dstReg.Name(), srcReg.Name());
+	}
+
+	A64::Register dstReg;
+	A64::Register srcReg;
+};
+
+class CallLeafRuntimeInstr : public ILInstr {
+public:
+	CallLeafRuntimeInstr(AddrRange addrRange, uint64_t thrOffset) : ILInstr(CallLeafRuntime, addrRange), thrOffset(thrOffset) {}
+	CallLeafRuntimeInstr(AddrRange addrRange, uint64_t thrOffset, std::vector<std::unique_ptr<MoveRegInstr>> ils) 
+		: ILInstr(CallLeafRuntime, addrRange), thrOffset(thrOffset), movILs(std::move(ils)) {}
+	CallLeafRuntimeInstr() = delete;
+	CallLeafRuntimeInstr(CallLeafRuntimeInstr&&) = delete;
+	CallLeafRuntimeInstr& operator=(const CallLeafRuntimeInstr&) = delete;
+
+	virtual std::string ToString();
+
+	int32_t thrOffset;
+	std::vector<std::unique_ptr<MoveRegInstr>> movILs;
+};
+
 class LoadValueInstr : public ILInstr {
 public:
 	LoadValueInstr(AddrRange addrRange, A64::Register dstReg, VarItem val) : ILInstr(LoadValue, addrRange), dstReg(dstReg), val(std::move(val)) {}
@@ -150,21 +180,6 @@ public:
 
 	A64::Register dstReg;
 	VarItem val;
-};
-
-class LoadImmInstr : public ILInstr {
-public:
-	LoadImmInstr(AddrRange addrRange, A64::Register dstReg, int64_t val) : ILInstr(LoadImm, addrRange), dstReg(dstReg), val(val) {}
-	LoadImmInstr() = delete;
-	LoadImmInstr(LoadImmInstr&&) = delete;
-	LoadImmInstr& operator=(const LoadImmInstr&) = delete;
-
-	virtual std::string ToString() {
-		return std::format("{} = {:#x}", dstReg.Name(), val);
-	}
-
-	A64::Register dstReg;
-	int64_t val;
 };
 
 class DecompressPointerInstr : public ILInstr {

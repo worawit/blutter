@@ -2,6 +2,7 @@
 #include "CodeAnalyzer.h"
 #include "DartApp.h"
 #include "VarValue.h"
+#include "DartThreadInfo.h"
 #include <source_location>
 
 #ifndef NO_CODE_ANALYSIS
@@ -35,10 +36,10 @@ class InsnException
 {
 public:
 	explicit InsnException(const char* cond, AsmIterator& insn, const std::source_location& location = std::source_location::current())
-		: cond{ cond }, insn{ insn }, location{ location } {}
+		: cond{ cond }, insn{ insn.Current() }, location{ location } {}
 
 	std::string cond;
-	AsmIterator& insn;
+	cs_insn* insn;
 	std::source_location location;
 };
 
@@ -220,8 +221,9 @@ public:
 	std::unique_ptr<LeaveFrameInstr> processLeaveFrameInstr(AsmIterator& insn);
 	std::unique_ptr<AllocateStackInstr> processAllocateStackInstr(AsmIterator& insn);
 	std::unique_ptr<CheckStackOverflowInstr> processCheckStackOverflowInstr(AsmIterator& insn);
+	std::unique_ptr<CallLeafRuntimeInstr> processCallLeafRuntime(AsmIterator& insn);
 	std::unique_ptr<LoadValueInstr> processLoadValueInstr(AsmIterator& insn);
-	std::unique_ptr<LoadImmInstr> processLoadImmInstr(AsmIterator& insn);
+	std::unique_ptr<MoveRegInstr> processMoveRegInstr(AsmIterator& insn);
 	std::unique_ptr<DecompressPointerInstr> processDecompressPointerInstr(AsmIterator& insn);
 	std::unique_ptr<SaveRegisterInstr> processSaveRegisterInstr(AsmIterator& insn);
 	std::unique_ptr<RestoreRegisterInstr> processLoadSavedRegisterInstr(AsmIterator& insn);
@@ -280,8 +282,8 @@ static const AsmMatcherFn matcherFns[] = {
 	(AsmMatcherFn) &FunctionAnalyzer::processLeaveFrameInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processAllocateStackInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processCheckStackOverflowInstr,
+	(AsmMatcherFn) &FunctionAnalyzer::processCallLeafRuntime,
 	(AsmMatcherFn) &FunctionAnalyzer::processLoadValueInstr,
-	//&FunctionAnalyzer::processLoadImmInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processDecompressPointerInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processSaveRegisterInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processLoadSavedRegisterInstr,
@@ -400,11 +402,11 @@ void FunctionAnalyzer::printInsnException(InsnException& e)
 		<< " `" << e.location.function_name() << "`: " << e.cond << '\n';
 	const uint64_t fn_addr = fnInfo->dartFn.Address();
 
-	auto ins = e.insn.Current();
+	auto ins = e.insn;
 	for (int i = 0; ins->address > fn_addr && i < 4; i++) {
 		--ins;
 	}
-	while (ins != e.insn.Current()) {
+	while (ins != e.insn) {
 		std::cerr << std::format("    {:#x}: {} {}\n", ins->address, &ins->mnemonic[0], &ins->op_str[0]);
 		++ins;
 	}
@@ -472,35 +474,180 @@ std::unique_ptr<CheckStackOverflowInstr> FunctionAnalyzer::processCheckStackOver
 		++insn;
 
 		// cmp SP, TMP
-		INSN_ASSERT(insn.id() == ARM64_INS_CMP);
-		INSN_ASSERT(insn.ops(0).reg == CSREG_DART_SP);
-		INSN_ASSERT(insn.ops(1).reg == CSREG_DART_TMP);
-		++insn;
-			
-		INSN_ASSERT(insn.id() == ARM64_INS_B);
-		INSN_ASSERT(insn.ops(0).type == ARM64_OP_IMM);
-		uint64_t target = (uint64_t)insn.ops(0).imm;
-		const auto cc = insn.cc();
-		++insn;
-		
-		if (cc == ARM64_CC_HI) {
-			INSN_ASSERT(insn.IsBranch());
-			INSN_ASSERT(insn.NextAddress() == target);
-			target = (uint64_t)insn.ops(0).imm;
-			++insn;
-		}
-		else {
-			// b.ls #overflow_target
-			INSN_ASSERT(cc == ARM64_CC_LS);
-			//FATAL("unexpect branch condition for CheckStackOverflow");
-		}
+INSN_ASSERT(insn.id() == ARM64_INS_CMP);
+INSN_ASSERT(insn.ops(0).reg == CSREG_DART_SP);
+INSN_ASSERT(insn.ops(1).reg == CSREG_DART_TMP);
+++insn;
 
-		if (target != 0) {
-			// the dart compiler always put slow path at the end of function after "ret"
-			INSN_ASSERT(target < dartFn->AddressEnd() && target >= insn.address());
-			if (fnInfo->firstCheckStackOverflowAddr == 0)
-				fnInfo->firstCheckStackOverflowAddr = ins0_addr;
-			return std::make_unique<CheckStackOverflowInstr>(insn.Wrap(ins0_addr), target);
+INSN_ASSERT(insn.id() == ARM64_INS_B);
+INSN_ASSERT(insn.ops(0).type == ARM64_OP_IMM);
+uint64_t target = (uint64_t)insn.ops(0).imm;
+const auto cc = insn.cc();
+++insn;
+
+if (cc == ARM64_CC_HI) {
+	INSN_ASSERT(insn.IsBranch());
+	INSN_ASSERT(insn.NextAddress() == target);
+	target = (uint64_t)insn.ops(0).imm;
+	++insn;
+}
+else {
+	// b.ls #overflow_target
+	INSN_ASSERT(cc == ARM64_CC_LS);
+	//FATAL("unexpect branch condition for CheckStackOverflow");
+}
+
+if (target != 0) {
+	// the dart compiler always put slow path at the end of function after "ret"
+	INSN_ASSERT(target < dartFn->AddressEnd() && target >= insn.address());
+	if (fnInfo->firstCheckStackOverflowAddr == 0)
+		fnInfo->firstCheckStackOverflowAddr = ins0_addr;
+	return std::make_unique<CheckStackOverflowInstr>(insn.Wrap(ins0_addr), target);
+}
+	}
+
+	return nullptr;
+}
+
+std::unique_ptr<CallLeafRuntimeInstr> FunctionAnalyzer::processCallLeafRuntime(AsmIterator& insn)
+{
+	// CCallInstr::EmitNativeCode()
+	if (insn.id() == ARM64_INS_AND && insn.ops(0).reg == CSREG_DART_SP && insn.ops(1).reg == CSREG_DART_SP && insn.ops(2).imm == 0xfffffffffffffff0) {
+		// previous IL must be EnterFrame
+		INSN_ASSERT(fnInfo->LastIL()->Kind() == ILInstr::EnterFrame);
+		if (fnInfo->LastIL()->Kind() == ILInstr::EnterFrame) {
+			InsnMarker marker(insn);
+			++insn;
+			if (insn.id() == ARM64_INS_MOV && insn.ops(0).reg == ARM64_REG_SP && insn.ops(1).reg == CSREG_DART_SP) {
+				++insn;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_LDR);
+				INSN_ASSERT(insn.ops(0).reg == CSREG_DART_TMP);
+				INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_THR);
+				const auto thr_offset = insn.ops(1).mem.disp;
+				++insn;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_STR);
+				INSN_ASSERT(insn.ops(0).reg == CSREG_DART_TMP);
+				INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_THR && insn.ops(1).mem.disp == AOT_Thread_vm_tag_offset);
+				++insn;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_BLR);
+				INSN_ASSERT(insn.ops(0).reg == CSREG_DART_TMP);
+				++insn;
+
+				INSN_ASSERT(insn.IsMovz());
+				INSN_ASSERT(insn.ops(0).reg == CSREG_DART_TMP);
+				++insn;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_STR);
+				INSN_ASSERT(insn.ops(0).reg == CSREG_DART_TMP);
+				INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_THR && insn.ops(1).mem.disp == AOT_Thread_vm_tag_offset);
+				++insn;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_LDR);
+				INSN_ASSERT(insn.ops(0).reg == CSREG_DART_TMP);
+				INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_THR && insn.ops(1).mem.disp == AOT_Thread_saved_stack_limit_offset);
+				++insn;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_SUB);
+				INSN_ASSERT(insn.ops(0).reg == ARM64_REG_SP);
+				INSN_ASSERT(insn.ops(1).reg == CSREG_DART_TMP);
+				INSN_ASSERT(insn.ops(2).imm == 1 && insn.ops(2).shift.type == ARM64_SFT_LSL && insn.ops(2).shift.value == 12);
+				++insn;
+
+				// leave frame
+				auto il = processLeaveFrameInstr(insn);
+				INSN_ASSERT(il);
+
+				INSN_ASSERT(GetThreadLeafFunction(thr_offset));
+
+				// remove previous EnterFrame
+				fnInfo->RemoveLastIL();
+
+				return std::make_unique<CallLeafRuntimeInstr>(insn.Wrap(marker.Take()), thr_offset);
+			}
+		}
+	}
+	// weird case
+	else if (insn.id() == ARM64_INS_MOV && insn.ops(1).reg == CSREG_DART_THR) {
+		const auto tmp_reg = insn.ops(0).reg;
+		InsnMarker marker(insn);
+		++insn;
+
+		if (insn.id() == ARM64_INS_LDR && insn.ops(1).mem.base == tmp_reg) {
+			const auto thr_offset = insn.ops(1).mem.disp;
+			const A64::Register tmp_target_reg = insn.ops(0).reg;
+			++insn;
+
+			INSN_ASSERT(GetThreadLeafFunction(thr_offset));
+
+			std::vector<std::unique_ptr<MoveRegInstr>> movILs;
+			while (true) {
+				auto il = processMoveRegInstr(insn);
+				INSN_ASSERT(il);
+				if (il->srcReg == A64::Register::FP) {
+					INSN_ASSERT(il->dstReg == A64::Register::TMP2);
+					break;
+				}
+				else if (il->srcReg == tmp_target_reg) {
+					INSN_ASSERT(il->dstReg == A64::Register::R9);
+					//const auto call_target_reg = insn.ops(0).reg;
+				}
+				else {
+					// moving for setting up call paramaeters
+					movILs.push_back(std::move(il));
+				}
+			}
+			const auto call_target_reg = ARM64_REG_X9;
+
+			// save fp to stack
+			INSN_ASSERT(insn.id() == ARM64_INS_STR && insn.writeback());
+			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
+			INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_SP && insn.ops(1).mem.disp == -8);
+			++insn;
+
+			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
+			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
+			++insn;
+
+			INSN_ASSERT(insn.id() == ARM64_INS_AND);
+			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_SP);
+			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
+			INSN_ASSERT(insn.ops(2).imm == 0xfffffffffffffff0);
+			++insn;
+
+			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+			INSN_ASSERT(insn.ops(1).reg == ARM64_REG_SP);
+			const auto saved_csp_reg = insn.ops(0).reg;
+			++insn;
+
+			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+			INSN_ASSERT(insn.ops(0).reg == ARM64_REG_SP);
+			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
+			++insn;
+
+			INSN_ASSERT(insn.id() == ARM64_INS_BLR);
+			INSN_ASSERT(insn.ops(0).reg == call_target_reg);
+			++insn;
+
+			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+			INSN_ASSERT(insn.ops(0).reg == ARM64_REG_SP);
+			INSN_ASSERT(insn.ops(1).reg == saved_csp_reg);
+			++insn;
+
+			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_SP);
+			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_FP);
+			++insn;
+
+			INSN_ASSERT(insn.id() == ARM64_INS_LDR && insn.writeback());
+			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
+			INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_SP && insn.ops(2).imm == 8);
+			++insn;
+
+			return std::make_unique<CallLeafRuntimeInstr>(insn.Wrap(marker.Take()), thr_offset, std::move(movILs));
 		}
 	}
 
@@ -1173,64 +1320,71 @@ void FunctionAnalyzer::handleOptionalNamedParameters(AsmIterator& insn, arm64_re
 					return nextParamAddr;
 				}
 				return (int64_t)0;
-				}();
+			}();
 
-				if (nextParamAddr) {
-					if (nameMismatchAddr == nextParamAddr) {
-						// assume dead code
-						while (insn.address() < nextParamAddr)
-							++insn;
-						break;
-					}
-				}
-
-				// TODO: split state for match and mismatch branch, so all param can be tracked correctly
-				if (insn.id() == ARM64_INS_SBFX && insn.ops(2).imm == 1 && insn.ops(3).imm == 0x1f) {
-					// assume curr param pos Smi to native in default branch
-					++insn;
-				}
-
-				while (insn.id() == ARM64_INS_MOV && insn.ops(1).type == ARM64_OP_REG && insn.ops(1).reg != CSREG_DART_NULL) {
-					// don't move register on another branch
-					if (nextParamAddr == 0) {
-						auto val = fnInfo->State()->MoveRegister(insn.ops(0).reg, insn.ops(1).reg);
-						INSN_ASSERT(val);
-					}
-					// TODO: verify final register for valNameCurrParamPos (set when "nameParamCnt && !isLastName") in this branch 
-					//         is same as another branch
-
-					++insn;
-				}
-
-				// assign param position in case of first non "required" name in default branch (no passing this parameter)
-				const auto processAssignParamPos0 = [&] {
-					if (insn.IsMovz() && fnInfo->State()->GetValue(insn.ops(0).reg) == fnInfo->Vars()->ValCurrNumNameParam() && insn.ops(1).imm == fnInfo->params.NumOptionalParam() - 1) {
+			if (nextParamAddr) {
+				if (nameMismatchAddr == nextParamAddr) {
+					// assume dead code
+					while (insn.address() < nextParamAddr)
 						++insn;
-						return true;
-					}
-					return false;
-					};
-
-				auto foundAssignParamPos0 = false;
-				if (!nameParamCnt && !isLastName) {
-					foundAssignParamPos0 = processAssignParamPos0();
+					break;
 				}
+			}
 
-				// load default value and setting paramPos can be any order
-				if (doLoadValue) {
-					// load default value
-					auto il = processLoadValueInstr(insn);
-					if (!il)
-						break;
-					INSN_ASSERT(fnInfo->State()->GetValue(il->dstReg)->AsParam()->idx == fnInfo->params.NumParam() - 1);
-					fnInfo->params.back().val = il->val.TakeValue();
+			// TODO: split state for match and mismatch branch, so all param can be tracked correctly
+			if (insn.id() == ARM64_INS_SBFX && insn.ops(2).imm == 1 && insn.ops(3).imm == 0x1f) {
+				// assume curr param pos Smi to native in default branch
+				++insn;
+			}
+
+			while (insn.id() == ARM64_INS_MOV && insn.ops(1).type == ARM64_OP_REG && insn.ops(1).reg != CSREG_DART_NULL) {
+				// don't move register on another branch
+				if (nextParamAddr == 0) {
+					auto val = fnInfo->State()->MoveRegister(insn.ops(0).reg, insn.ops(1).reg);
+					INSN_ASSERT(val);
 				}
+				// TODO: verify final register for valNameCurrParamPos (set when "nameParamCnt && !isLastName") in this branch 
+				//         is same as another branch
 
-				if (!nameParamCnt && !isLastName && !foundAssignParamPos0) {
-					foundAssignParamPos0 = processAssignParamPos0();
+				++insn;
+			}
+
+			// assign param position in case of first non "required" name in default branch (no passing this parameter)
+			const auto processAssignParamPos0 = [&] {
+				if (insn.IsMovz() && fnInfo->State()->GetValue(insn.ops(0).reg) == fnInfo->Vars()->ValCurrNumNameParam() && insn.ops(1).imm == fnInfo->params.NumOptionalParam() - 1) {
+					++insn;
+					return true;
 				}
+				return false;
+			};
 
-				INSN_ASSERT(nextParamAddr == 0 || insn.address() == nextParamAddr);
+			auto foundAssignParamPos0 = false;
+			if (!nameParamCnt && !isLastName) {
+				foundAssignParamPos0 = processAssignParamPos0();
+			}
+
+			// load default value and setting paramPos can be any order
+			if (doLoadValue) {
+				// load default value
+				auto il = processLoadValueInstr(insn);
+				if (!il)
+					break;
+				INSN_ASSERT(fnInfo->State()->GetValue(il->dstReg)->AsParam()->idx == fnInfo->params.NumParam() - 1);
+				fnInfo->params.back().val = il->val.TakeValue();
+
+				// very weird case in Dart 3.2.3. duplicate loading value
+				if (nextParamAddr != 0 && insn.address() < nextParamAddr) {
+					auto min_diff = (!nameParamCnt && !isLastName && !foundAssignParamPos0) ? 4 : 0;
+					if (nextParamAddr - insn.address() > min_diff)
+						processLoadValueInstr(insn);
+				}
+			}
+
+			if (!nameParamCnt && !isLastName && !foundAssignParamPos0) {
+				foundAssignParamPos0 = processAssignParamPos0();
+			}
+
+			INSN_ASSERT(nextParamAddr == 0 || insn.address() == nextParamAddr);
 		}
 
 		if (doLoadValue) {
@@ -1838,6 +1992,18 @@ std::unique_ptr<LoadValueInstr> FunctionAnalyzer::processLoadValueInstr(AsmItera
 	return nullptr;
 }
 
+std::unique_ptr<MoveRegInstr> FunctionAnalyzer::processMoveRegInstr(AsmIterator& insn)
+{
+	if (insn.id() == ARM64_INS_MOV && insn.ops(1).type == ARM64_OP_REG) {
+		const auto ins0_addr = insn.address();
+		const A64::Register dstReg = insn.ops(0).reg;
+		const A64::Register srcReg = insn.ops(1).reg;
+		++insn;
+		return std::make_unique<MoveRegInstr>(insn.Wrap(ins0_addr), dstReg, srcReg);
+	}
+	return nullptr;
+}
+
 std::unique_ptr<DecompressPointerInstr> FunctionAnalyzer::processDecompressPointerInstr(AsmIterator& insn)
 {
 	if (insn.id() == ARM64_INS_ADD && insn.ops(2).reg == CSREG_DART_HEAP && insn.ops(2).shift.value == 32) {
@@ -1974,9 +2140,10 @@ std::unique_ptr<GdtCallInstr> FunctionAnalyzer::processGdtCallInstr(AsmIterator&
 			INSN_ASSERT(insn.id() == ARM64_INS_ADD);
 			INSN_ASSERT(insn.ops(2).type == ARM64_OP_REG && insn.ops(2).reg == CSREG_DART_TMP2);
 
-			auto il_loadImm = reinterpret_cast<LoadImmInstr*>(fnInfo->LastIL());
+			auto il_loadImm = reinterpret_cast<LoadValueInstr*>(fnInfo->LastIL());
+			INSN_ASSERT(il_loadImm->val.Storage().IsImmediate());
 			INSN_ASSERT(il_loadImm->dstReg == A64::TMP2_REG);
-			offset = il_loadImm->val;
+			offset = il_loadImm->val.Get<VarInteger>()->Value();
 			insn0_addr = il_loadImm->Start();
 			fnInfo->RemoveLastIL();
 			++insn;

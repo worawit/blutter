@@ -2,6 +2,7 @@
 #include "DartThreadInfo.h"
 
 static std::unordered_map<intptr_t, std::string> threadOffsetNames;
+static std::unordered_map<intptr_t, LeafFunctionInfo> leafFunctionMap;
 
 static void initThreadOffsetNames()
 {
@@ -67,6 +68,11 @@ static void initThreadOffsetNames()
 	threadOffsetNames[dart::Thread::execution_state_offset()] = "execution_state";
 	//threadOffsetNames[dart::Thread::next_task_id_offset()] = "next_task_id";
 	//threadOffsetNames[dart::Thread::random_offset()] = "random";
+
+#define DEFINE_LEFT_FN_INFO(returntype, name, ...)  \
+	leafFunctionMap.emplace(std::make_pair(dart::Thread::name##_entry_point_offset(), LeafFunctionInfo{#returntype, #__VA_ARGS__}));
+	LEAF_RUNTIME_ENTRY_LIST(DEFINE_LEFT_FN_INFO);
+#undef DEFINE_LEFT_FN_INFO
 }
 
 const std::string& GetThreadOffsetName(intptr_t offset)
@@ -93,4 +99,12 @@ const std::unordered_map<intptr_t, std::string>& GetThreadOffsetsMap()
 	if (threadOffsetNames.empty())
 		initThreadOffsetNames();
 	return threadOffsetNames;
+}
+
+const LeafFunctionInfo* GetThreadLeafFunction(intptr_t offset)
+{
+	if (threadOffsetNames.empty())
+		initThreadOffsetNames();
+	auto it = leafFunctionMap.find(offset);
+	return it == leafFunctionMap.end() ? nullptr : &it->second;
 }
