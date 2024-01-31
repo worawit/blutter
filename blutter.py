@@ -82,7 +82,7 @@ def cmake_blutter(blutter_name: str, dartlib_name: str, name_suffix: str, macros
         
     my_env = None
     if platform.system() == 'Darwin':
-        llvm_path = subprocess.run(['brew', '--prefix', 'llvm@15'], capture_output=True, check=True).stdout.decode().strip()
+        llvm_path = subprocess.run(['brew', '--prefix', 'llvm@16'], capture_output=True, check=True).stdout.decode().strip()
         clang_file = os.path.join(llvm_path, 'bin', 'clang')
         my_env = {**os.environ, 'CC': clang_file, 'CXX': clang_file+'++'}
     # cmake -GNinja -Bbuild -DCMAKE_BUILD_TYPE=Release

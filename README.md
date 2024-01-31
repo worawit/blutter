@@ -8,7 +8,7 @@ For high priority missing features, see [TODO](#todo)
 
 
 ## Environment Setup
-This application uses C++20 Formatting library. It requires very recent C++ compiler such as g++>=13, Clang>=15.
+This application uses C++20 Formatting library. It requires very recent C++ compiler such as g++>=13, Clang>=16.
 
 I recommend using Linux OS (only tested on Deiban sid/trixie) because it is easy to setup.
 
@@ -28,11 +28,11 @@ python scripts\init_env_win.py
 ```
 - Start "x64 Native Tools Command Prompt"
 
-### macOS Ventura (clang 15)
+### macOS Ventura and Sonoma (clang 16)
 - Install XCode
-- Install clang 15 and required tools
+- Install clang 16 and required tools
 ```
-brew install llvm@15 cmake ninja pkg-config icu4c capstone
+brew install llvm@16 cmake ninja pkg-config icu4c capstone
 pip3 install pyelftools requests
 ```
 

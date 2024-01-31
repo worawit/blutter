@@ -1430,7 +1430,7 @@ void FunctionAnalyzer::handleArgumentsDescriptorTypeArguments(AsmIterator& insn)
 	const auto storeTypeArgLenRes = handleStoreLocal(insn, typeArgLenReg);
 	if (storeTypeArgLenRes.fpOffset != 0) {
 		// TODO: save type argument length to local variable
-		storeTypeArgLenRes.fpOffset;
+		//storeTypeArgLenRes.fpOffset;
 	}
 
 	if (insn.id() == ARM64_INS_CBZ) {

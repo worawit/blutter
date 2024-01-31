@@ -1,6 +1,6 @@
 # 1
 # this is CMakeLists.txt template file for building dart AOT VM
-cmake_minimum_required (VERSION 3.19)
+cmake_minimum_required (VERSION 3.20)
 
 project(dartvmVERSION_PLACE_HOLDER)
 if (${PROJECT_NAME} MATCHES "_PLACE_HOLDER")
