@@ -40,7 +40,10 @@ BASEDIR = '.'
 # check if BASEDIR contains runtime directory in case user input is dart sdk directory
 tmpdir = os.path.join(BASEDIR, 'runtime')
 if os.path.isdir(tmpdir):
+    SDKDIR = BASEDIR
     BASEDIR = tmpdir
+else:
+    SDKDIR = os.path.join(BASEDIR, '..')
 
 cc_srcs = []
 hdrs = []
@@ -73,7 +76,11 @@ for lib in ('async', 'core', 'developer', 'ffi', 'isolate', 'math', 'typed_data'
         srcs = get_default_src_files(gni_file)
         cc_srcs.extend([ os.path.join(BASEDIR, 'lib', src) for src in srcs if src.endswith('.cc') ])
 
-cc_srcs.extend(get_src_from_path(BASEDIR+'/third_party/double-conversion/src'))
+double_conversion_dir = BASEDIR+'/third_party/double-conversion/src'
+if not os.path.isdir(double_conversion_dir):
+    double_conversion_dir = SDKDIR+'/third_party/double-conversion/src'
+    assert os.path.isdir(double_conversion_dir)
+cc_srcs.extend(get_src_from_path(double_conversion_dir))
 
 #print('VMSRCS='+' '.join(cc_srcs))
 #print(' '.join(cc_srcs))

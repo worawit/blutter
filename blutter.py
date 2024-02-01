@@ -119,7 +119,7 @@ def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no
     blutter_name = f'blutter_{dartlib_name}{name_suffix}'
     blutter_file = os.path.join(BIN_DIR, blutter_name) + ('.exe' if os.name == 'nt' else '')
 
-    if not os.path.isfile(blutter_file):
+    if not os.path.isfile(blutter_file) or rebuild_blutter:
         # before fetch and build, check the existence of compiled library first
         #   so the src and build directories can be deleted
         if os.name == 'nt':

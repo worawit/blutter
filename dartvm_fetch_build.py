@@ -48,7 +48,8 @@ def checkout_dart(ver: str, snapshot_hash: str = None):
         # minimum clone repository at the target branch
         subprocess.run([GIT_CMD, '-c', 'advice.detachedHead=false', 'clone', '-b', ver, '--depth', '1', '--filter=blob:none', '--sparse', '--progress', DART_GIT_URL, clonedir], check=True)
         # checkout only needed sources (runtime and tools)
-        subprocess.run([GIT_CMD, 'sparse-checkout', 'set', 'runtime', 'tools'], cwd=clonedir, check=True)
+        # since Dart 3.3 "third_party/double-conversion" is moved to outside of "runtime" directory
+        subprocess.run([GIT_CMD, 'sparse-checkout', 'set', 'runtime', 'tools', 'third_party/double-conversion'], cwd=clonedir, check=True)
         # delete some unnecessary files
         with os.scandir(clonedir) as it:
             for entry in it:
