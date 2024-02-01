@@ -223,6 +223,7 @@ public:
 	std::unique_ptr<CheckStackOverflowInstr> processCheckStackOverflowInstr(AsmIterator& insn);
 	std::unique_ptr<CallLeafRuntimeInstr> processCallLeafRuntime(AsmIterator& insn);
 	std::unique_ptr<LoadValueInstr> processLoadValueInstr(AsmIterator& insn);
+	std::unique_ptr<ClosureCallInstr> processClosureCallInstr(AsmIterator& insn);
 	std::unique_ptr<MoveRegInstr> processMoveRegInstr(AsmIterator& insn);
 	std::unique_ptr<DecompressPointerInstr> processDecompressPointerInstr(AsmIterator& insn);
 	std::unique_ptr<SaveRegisterInstr> processSaveRegisterInstr(AsmIterator& insn);
@@ -285,6 +286,7 @@ static const AsmMatcherFn matcherFns[] = {
 	(AsmMatcherFn) &FunctionAnalyzer::processCallLeafRuntime,
 	(AsmMatcherFn) &FunctionAnalyzer::processLoadValueInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processDecompressPointerInstr,
+	(AsmMatcherFn) &FunctionAnalyzer::processClosureCallInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processSaveRegisterInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processLoadSavedRegisterInstr,
 	(AsmMatcherFn) &FunctionAnalyzer::processInitAsyncInstr,
@@ -1042,9 +1044,9 @@ void FunctionAnalyzer::handleOptionalNamedParameters(AsmIterator& insn, arm64_re
 			}
 			return offset;
 		}
-
 		return -1;
-		};
+	};
+
 	// load named parameter value (name or position) from ArgumentsDescriptor with known offset
 	// return -1 if it is not loaded ArgumentsDescriptor
 	const auto loadNamedParamValueKnownOffset = [&](int expectedOffset, VarValue* val) {
@@ -1987,6 +1989,57 @@ std::unique_ptr<LoadValueInstr> FunctionAnalyzer::processLoadValueInstr(AsmItera
 	if (dstReg.IsSet()) {
 		auto item = VarItem{ VarStorage::Immediate, new VarInteger{imm, VarValue::NativeInt} };
 		return std::make_unique<LoadValueInstr>(insn.Wrap(ins0_addr), dstReg, std::move(item));
+	}
+
+	return nullptr;
+}
+
+std::unique_ptr<ClosureCallInstr> FunctionAnalyzer::processClosureCallInstr(AsmIterator& insn)
+{
+	// ClosureCallInstr::EmitNativeCode
+	if (insn.id() == ARM64_INS_LDUR && insn.ops(0).reg == ARM64_REG_X2 && insn.ops(1).mem.base == ARM64_REG_X0 && insn.ops(1).mem.disp == AOT_Closure_entry_point_offset - dart::kHeapObjectTag) {
+		// previous IL must be Load from PP and it is list for ArgumentDescriptor and dstReg is R4
+		auto il = fnInfo->LastIL();
+		if (il->Kind() == ILInstr::LoadValue) {
+			auto loadIL = reinterpret_cast<LoadValueInstr*>(il);
+			if (loadIL->dstReg == A64::Register{ dart::ARGS_DESC_REG } && loadIL->val.ValueTypeId() == dart::kArrayCid) {
+				const auto& arr = dart::Array::Handle(loadIL->val.Get<VarArray>()->ptr);
+				const auto arrLen = arr.Length();
+				const auto namedParamCmt = (arrLen - 5) / 2;
+				auto arrPtr = dart::Array::DataOf(arr.ptr());
+
+				INSN_ASSERT(!arrPtr->IsHeapObject());
+				const auto typeArgLen = dart::RawSmiValue(dart::Smi::RawCast(arrPtr->DecompressSmi()));
+				arrPtr++;
+				INSN_ASSERT(!arrPtr->IsHeapObject());
+				const auto argCnt = dart::RawSmiValue(dart::Smi::RawCast(arrPtr->DecompressSmi()));
+				INSN_ASSERT(argCnt > 0);
+				arrPtr++;
+				INSN_ASSERT(!arrPtr->IsHeapObject());
+				const auto argSize = dart::RawSmiValue(dart::Smi::RawCast(arrPtr->DecompressSmi()));
+				INSN_ASSERT(argCnt == argSize);
+				arrPtr++;
+				INSN_ASSERT(!arrPtr->IsHeapObject());
+				const auto positionalArgCnt = dart::RawSmiValue(dart::Smi::RawCast(arrPtr->DecompressSmi()));
+				INSN_ASSERT(argCnt == positionalArgCnt + namedParamCmt);
+				// TODO: extract parameter name
+				//arrPtr++;
+				//INSN_ASSERT(arrPtr->IsHeapObject());
+				//INSN_ASSERT(arrPtr->Decompress(app.heap_base()).IsRawNull());
+
+				++insn;
+
+				INSN_ASSERT(insn.id() == ARM64_INS_BLR);
+				INSN_ASSERT(insn.ops(0).reg == ARM64_REG_X2);
+				++insn;
+
+				const auto ins0_addr = il->Start();
+				fnInfo->RemoveLastIL();
+
+				// TODO: still don't know what information is needed for full analysis
+				return std::make_unique<ClosureCallInstr>(insn.Wrap(ins0_addr), (int32_t)argCnt, (int32_t)typeArgLen);
+			}
+		}
 	}
 
 	return nullptr;

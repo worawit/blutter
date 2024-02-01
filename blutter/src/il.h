@@ -16,6 +16,7 @@ public:
 		CheckStackOverflow,
 		CallLeafRuntime,
 		LoadValue,
+		ClosureCall,
 		MoveReg,
 		DecompressPointer,
 		SaveRegister,
@@ -180,6 +181,21 @@ public:
 
 	A64::Register dstReg;
 	VarItem val;
+};
+
+class ClosureCallInstr : public ILInstr {
+public:
+	ClosureCallInstr(AddrRange addrRange, int32_t numArg, int32_t numTypeArg) : ILInstr(ClosureCall, addrRange), numArg(numArg), numTypeArg(numTypeArg) {}
+	ClosureCallInstr() = delete;
+	ClosureCallInstr(ClosureCallInstr&&) = delete;
+	ClosureCallInstr& operator=(const ClosureCallInstr&) = delete;
+
+	virtual std::string ToString() {
+		return "ClosureCall";
+	}
+
+	int32_t numArg;
+	int32_t numTypeArg;
 };
 
 class DecompressPointerInstr : public ILInstr {
