@@ -11,7 +11,7 @@ DartLibrary::DartLibrary(const dart::Library& lib) : ptr(lib.ptr()), topClass(NU
 	dtext = lib.url();
 	url = dtext.ToCString();
 
-	if (!name.empty() || lib.is_dart_scheme())
+	if (lib.is_dart_scheme())
 		isInternal = true;
 	//else if (url.starts_with("package:flutter/src/") || url.starts_with("package:typed_data/src/") || url.starts_with("package:collection/src/"))
 	//	isInternal = true;
