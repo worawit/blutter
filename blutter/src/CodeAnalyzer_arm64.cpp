@@ -257,7 +257,7 @@ private:
 		asm_text.dataType = AsmText::PoolOffset;
 		asm_text.poolOffset = offset;
 	}
-	void setAsmTextDataBoolean(uint64_t addr, VarBoolean* b) {
+	void setAsmTextDataBoolean(uint64_t addr, bool b) {
 		auto& asm_text = fnInfo->asmTexts.AtAddr(addr);
 		asm_text.dataType = AsmText::Boolean;
 		asm_text.boolVal = b;
@@ -335,7 +335,7 @@ FunctionAnalyzer::ObjectPoolInstr FunctionAnalyzer::getObjectPoolInstruction(Asm
 				FATAL("add from NULL_REG");
 			}
 			auto b = new VarBoolean(val);
-			setAsmTextDataBoolean(marker.Take(), b);
+			setAsmTextDataBoolean(marker.Take(), val);
 			dstReg = A64::Register{ insn.ops(0).reg };
 			++insn;
 			return ObjectPoolInstr{ dstReg, VarItem{ VarStorage::NewImmediate(), b } };
