@@ -32,21 +32,33 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 		return "_anon_closure";
 	}
 
+	auto periodPos = fnName.find('.');
+	std::string prefix;
+	if (dartFn.IsStatic() && dartFn.Kind() == DartFunction::NORMAL && periodPos != std::string::npos) {
+		// this one is extension
+		prefix = fnName.substr(0, periodPos + 1);
+		if (prefix.starts_with("_extension#")) {
+			// anonymous extension. '#' is invalid name in IDA.
+			std::replace(prefix.begin(), prefix.end(), '#', '@');
+		}
+		fnName = fnName.substr(periodPos + 1);
+	}
+
 	if (OP_MAP.contains(fnName)) {
-		return "op_" + OP_MAP[fnName];
+		return prefix + "op_" + OP_MAP[fnName];
 	}
 	const auto last = fnName.back();
 	if (last == '=') {
 		fnName.pop_back();
-		return fnName + "_assign";
+		return prefix + fnName + "_assign";
 	}
 	else if (last == '-') {
 		fnName.pop_back();
-		return fnName + "_neg";
+		return prefix + fnName + "_neg";
 	}
 	else if (last == '!') {
 		fnName.pop_back();
-		return fnName + "_not";
+		return prefix + fnName + "_not";
 	}
 
 	switch (dartFn.Kind()) {
@@ -67,7 +79,7 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 		break;
 	}
 
-	return fnName;
+	return prefix + fnName;
 }
 
 void DartDumper::Dump4Ida(std::filesystem::path outDir)
