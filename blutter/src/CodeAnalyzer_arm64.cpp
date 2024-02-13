@@ -516,7 +516,8 @@ std::unique_ptr<CallLeafRuntimeInstr> FunctionAnalyzer::processCallLeafRuntime(A
 	// CCallInstr::EmitNativeCode()
 	if (insn.id() == ARM64_INS_AND && insn.ops(0).reg == CSREG_DART_SP && insn.ops(1).reg == CSREG_DART_SP && insn.ops(2).imm == 0xfffffffffffffff0) {
 		// previous IL must be EnterFrame
-		INSN_ASSERT(fnInfo->LastIL()->Kind() == ILInstr::EnterFrame);
+		//INSN_ASSERT(fnInfo->LastIL()->Kind() == ILInstr::EnterFrame);
+		// TODO: THR::call_native_through_safepoint_entry_point case and merge AllocStack IL to EnterFrame IL
 		if (fnInfo->LastIL()->Kind() == ILInstr::EnterFrame) {
 			InsnMarker marker(insn);
 			++insn;
@@ -572,85 +573,94 @@ std::unique_ptr<CallLeafRuntimeInstr> FunctionAnalyzer::processCallLeafRuntime(A
 		}
 	}
 	// weird case
-	else if (insn.id() == ARM64_INS_MOV && insn.ops(1).reg == CSREG_DART_THR) {
-		const auto tmp_reg = insn.ops(0).reg;
+	// it should be easier to detect THR register if varaible tracking is fully implemented
+	else if ((insn.id() == ARM64_INS_MOV && insn.ops(1).reg == CSREG_DART_THR) || 
+		(insn.id() == ARM64_INS_LDR && GetThreadLeafFunction(insn.ops(1).mem.disp) && insn.ops(1).mem.base != CSREG_DART_PP && insn.ops(1).mem.disp > dart::Thread::PropagateError_entry_point_offset()))
+	{
 		InsnMarker marker(insn);
+
+		if (insn.id() == ARM64_INS_MOV) {
+			const auto tmp_reg = insn.ops(0).reg;
+			++insn;
+
+			if (!(insn.id() == ARM64_INS_LDR && insn.ops(1).mem.base == tmp_reg)) {
+				return nullptr;
+			}
+		}
+
+		// LDR instruction
+		const auto thr_offset = insn.ops(1).mem.disp;
+		const A64::Register tmp_target_reg = insn.ops(0).reg;
 		++insn;
 
-		if (insn.id() == ARM64_INS_LDR && insn.ops(1).mem.base == tmp_reg) {
-			const auto thr_offset = insn.ops(1).mem.disp;
-			const A64::Register tmp_target_reg = insn.ops(0).reg;
-			++insn;
+		INSN_ASSERT(GetThreadLeafFunction(thr_offset));
 
-			INSN_ASSERT(GetThreadLeafFunction(thr_offset));
-
-			std::vector<std::unique_ptr<MoveRegInstr>> movILs;
-			while (true) {
-				auto il = processMoveRegInstr(insn);
-				INSN_ASSERT(il);
-				if (il->srcReg == A64::Register::FP) {
-					INSN_ASSERT(il->dstReg == A64::Register::TMP2);
-					break;
-				}
-				else if (il->srcReg == tmp_target_reg) {
-					INSN_ASSERT(il->dstReg == A64::Register::R9);
-					//const auto call_target_reg = insn.ops(0).reg;
-				}
-				else {
-					// moving for setting up call paramaeters
-					movILs.push_back(std::move(il));
-				}
+		std::vector<std::unique_ptr<MoveRegInstr>> movILs;
+		while (true) {
+			auto il = processMoveRegInstr(insn);
+			INSN_ASSERT(il);
+			if (il->srcReg == A64::Register::FP) {
+				INSN_ASSERT(il->dstReg == A64::Register::TMP2);
+				break;
 			}
-			const auto call_target_reg = ARM64_REG_X9;
-
-			// save fp to stack
-			INSN_ASSERT(insn.id() == ARM64_INS_STR && insn.writeback());
-			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
-			INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_SP && insn.ops(1).mem.disp == -8);
-			++insn;
-
-			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
-			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
-			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
-			++insn;
-
-			INSN_ASSERT(insn.id() == ARM64_INS_AND);
-			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_SP);
-			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
-			INSN_ASSERT(insn.ops(2).imm == 0xfffffffffffffff0);
-			++insn;
-
-			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
-			INSN_ASSERT(insn.ops(1).reg == ARM64_REG_SP);
-			const auto saved_csp_reg = insn.ops(0).reg;
-			++insn;
-
-			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
-			INSN_ASSERT(insn.ops(0).reg == ARM64_REG_SP);
-			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
-			++insn;
-
-			INSN_ASSERT(insn.id() == ARM64_INS_BLR);
-			INSN_ASSERT(insn.ops(0).reg == call_target_reg);
-			++insn;
-
-			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
-			INSN_ASSERT(insn.ops(0).reg == ARM64_REG_SP);
-			INSN_ASSERT(insn.ops(1).reg == saved_csp_reg);
-			++insn;
-
-			INSN_ASSERT(insn.id() == ARM64_INS_MOV);
-			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_SP);
-			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_FP);
-			++insn;
-
-			INSN_ASSERT(insn.id() == ARM64_INS_LDR && insn.writeback());
-			INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
-			INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_SP && insn.ops(2).imm == 8);
-			++insn;
-
-			return std::make_unique<CallLeafRuntimeInstr>(insn.Wrap(marker.Take()), thr_offset, std::move(movILs));
+			else if (il->srcReg == tmp_target_reg) {
+				INSN_ASSERT(il->dstReg == A64::Register::R9);
+				//const auto call_target_reg = insn.ops(0).reg;
+			}
+			else {
+				// moving for setting up call paramaeters
+				movILs.push_back(std::move(il));
+			}
 		}
+		const auto call_target_reg = ARM64_REG_X9;
+
+		// save fp to stack
+		INSN_ASSERT(insn.id() == ARM64_INS_STR && insn.writeback());
+		INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
+		INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_SP && insn.ops(1).mem.disp == -8);
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+		INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
+		INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_AND);
+		INSN_ASSERT(insn.ops(0).reg == CSREG_DART_SP);
+		INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
+		INSN_ASSERT(insn.ops(2).imm == 0xfffffffffffffff0);
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+		INSN_ASSERT(insn.ops(1).reg == ARM64_REG_SP);
+		const auto saved_csp_reg = insn.ops(0).reg;
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+		INSN_ASSERT(insn.ops(0).reg == ARM64_REG_SP);
+		INSN_ASSERT(insn.ops(1).reg == CSREG_DART_SP);
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_BLR);
+		INSN_ASSERT(insn.ops(0).reg == call_target_reg);
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+		INSN_ASSERT(insn.ops(0).reg == ARM64_REG_SP);
+		INSN_ASSERT(insn.ops(1).reg == saved_csp_reg);
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_MOV);
+		INSN_ASSERT(insn.ops(0).reg == CSREG_DART_SP);
+		INSN_ASSERT(insn.ops(1).reg == CSREG_DART_FP);
+		++insn;
+
+		INSN_ASSERT(insn.id() == ARM64_INS_LDR && insn.writeback());
+		INSN_ASSERT(insn.ops(0).reg == CSREG_DART_FP);
+		INSN_ASSERT(insn.ops(1).mem.base == CSREG_DART_SP && insn.ops(2).imm == 8);
+		++insn;
+
+		return std::make_unique<CallLeafRuntimeInstr>(insn.Wrap(marker.Take()), thr_offset, std::move(movILs));
 	}
 
 	return nullptr;
