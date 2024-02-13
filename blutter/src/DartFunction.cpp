@@ -24,7 +24,9 @@ DartFunction::DartFunction(DartClass& cls, const dart::FunctionPtr ptr) : DartFn
 	//is_closure = name == "<anonymous closure>";
 	is_closure = func.IsClosureFunction(); //func.IsNonImplicitClosureFunction();
 	//ASSERT(is_closure == (name == "<anonymous closure>"));
-	is_ffi = func.IsFfiTrampoline();
+	// Note: https://github.com/dart-lang/sdk/commit/dcdfcc2b8decc8bf47881f2e93ee5503ea98b7cf#diff-fba8499e9b9e86f518a0ad80eeda6a4309ac5a82c5e9e0b0bf962505e1ecddba
+	//   IsFfiTrampoline() is changed to IsFfiCallbackTrampoline()
+	is_ffi = func.kind() == dart::UntaggedFunction::kFfiTrampoline;
 	if (!is_ffi) {
 		//is_static = func.IsStaticFunction();
 		is_static = func.is_static();
