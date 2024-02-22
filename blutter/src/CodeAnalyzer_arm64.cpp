@@ -575,7 +575,7 @@ std::unique_ptr<CallLeafRuntimeInstr> FunctionAnalyzer::processCallLeafRuntime(A
 	// weird case
 	// it should be easier to detect THR register if varaible tracking is fully implemented
 	else if ((insn.id() == ARM64_INS_MOV && insn.ops(1).reg == CSREG_DART_THR) || 
-		(insn.id() == ARM64_INS_LDR && GetThreadLeafFunction(insn.ops(1).mem.disp) && insn.ops(1).mem.base != CSREG_DART_PP && insn.ops(1).mem.disp > dart::Thread::PropagateError_entry_point_offset()))
+		(insn.id() == ARM64_INS_LDR && GetThreadLeafFunction(insn.ops(1).mem.disp) && insn.ops(1).mem.base != CSREG_DART_PP && insn.ops(1).mem.disp > dart::Thread::AllocateHandle_entry_point_offset()))
 	{
 		InsnMarker marker(insn);
 
