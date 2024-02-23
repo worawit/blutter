@@ -15,7 +15,8 @@ set(CMAKE_INSTALL_PREFIX "${PROJECT_SOURCE_DIR}/../../packages" CACHE PATH "" FO
 if (MSVC)
 	set(ICU_ROOT "${PROJECT_SOURCE_DIR}/../../external/icu-windows")
 elseif (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-	set(ICU_ROOT "$ENV{HOMEBREW_PREFIX}/opt/icu4c")
+	execute_process(COMMAND brew --prefix icu4c OUTPUT_VARIABLE BREW_ICU)
+	string(STRIP "${BREW_ICU}" ICU_ROOT)
 endif()
 find_package(ICU REQUIRED uc)
 
