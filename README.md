@@ -64,6 +64,26 @@ You can use ```git pull``` to update and run blutter.py with ```--rebuild``` opt
 python3 blutter.py path/to/app/lib/arm64-v8a out_dir --rebuild
 ```
 
+## Usage with docker
+
+You can use docker to run blutter without setting up the environment.
+
+```
+docker build -t blutter .
+```
+
+then,you can use it with following command
+
+```
+docker run --rm blutter -v /path/to/app/lib/arm64-v8a:/data/lib -v /path/to/out_dir:/data/output
+```
+
+blutter also have an unofficial docker image on dockerhub. you can use it with following command.Note that the image is not updated frequently.
+
+```
+docker run --rm yixinbc/blutter -v /path/to/app/lib/arm64-v8a:/data/lib -v /path/to/out_dir:/data/output
+```
+
 ## Output files
 
 - **asm/\*** libapp assemblies with symbols
