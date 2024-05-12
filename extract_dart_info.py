@@ -35,7 +35,7 @@ def extract_libflutter_info(libflutter_file):
         elif elf.header.e_machine == 'EM_IA_64': # 50
             arch = 'x64'
         else:
-            assert False, "Unsupport architecture: " + elf.header.e_machine
+            assert False, f"Unsupport architecture: {elf.header.e_machine}"
 
         section = elf.get_section_by_name('.rodata')
         data = section.data()
