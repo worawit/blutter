@@ -82,6 +82,55 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 	return prefix + fnName;
 }
 
+void DartDumper::Dump4Radare2(std::filesystem::path outDir)
+{
+	std::filesystem::create_directory(outDir);
+	std::ofstream of((outDir / "addNames.r2").string());
+	of << "# create flags for libraries, classes and methods\n";
+
+	of << std::format("f app.base = {:#x}\n", app.base());
+	of << std::format("f app.heap_base = {:#x}\n", app.heap_base());
+
+	bool show_library = true;
+	bool show_class = true;
+	for (auto lib : app.libs) {
+		std::string lib_prefix = lib->GetName();
+
+		std::replace(lib_prefix.begin(), lib_prefix.end(), '$', '_');
+		std::replace(lib_prefix.begin(), lib_prefix.end(), '&', '_');
+		for (auto cls : lib->classes) {
+			std::string cls_prefix = cls->Name();
+			std::replace(cls_prefix.begin(), cls_prefix.end(), '$', '_');
+			std::replace(cls_prefix.begin(), cls_prefix.end(), '&', '_');
+			for (auto dartFn : cls->Functions()) {
+				const auto ep = dartFn->Address();
+				auto name = getFunctionName4Ida(*dartFn, cls_prefix);
+				std::replace(name.begin(), name.end(), '$', '_');
+				std::replace(name.begin(), name.end(), '&', '_');
+				if (show_library) {
+					of << std::format("CC Library({:#x}) = {} @ {}\n", lib->id, lib_prefix, ep);
+					of << std::format("f lib.{}={:#x} # {:#x}\n", lib_prefix, ep, lib->id);
+					show_library = false;
+				}
+				if (show_class) {
+					of << std::format("CC Class({:#x}) = {} @ {}\n", cls->Id(), cls_prefix, ep);
+					of << std::format("f class.{}.{}={:#x} # {:#x}\n", lib_prefix, cls_prefix, ep, cls->Id());
+					show_class = false;
+				}
+				of << std::format("f method.{}.{}.{}={:#x}\n", lib_prefix, cls_prefix, name.c_str(), ep);
+				if (dartFn->HasMorphicCode()) {
+					of << std::format("f method.{}.{}.{}.miss={:#x}\n", lib_prefix, cls_prefix, name.c_str(), 
+							dartFn->PayloadAddress());
+					of << std::format("f method.{}.{}.{}.check={:#x}\n", lib_prefix, cls_prefix, name.c_str(), 
+							dartFn->MonomorphicAddress());
+				}
+			}
+			show_class = true;
+		}
+		show_library = true;
+	}
+}
+
 void DartDumper::Dump4Ida(std::filesystem::path outDir)
 {
 	std::filesystem::create_directory(outDir);
