@@ -71,6 +71,13 @@ def find_compat_macro(dart_version: str, no_analysis: bool):
         if mm.find(b'V(InitLateStaticField)') == -1:
             macros.append('-DNO_INIT_LATE_STATIC_FIELD=1')
     
+    with open(os.path.join(vm_path, 'object_store.h'), 'rb') as f:
+        mm = mmap.mmap(f.fileno(), 0, access = mmap.ACCESS_READ)
+        # [vm] Simplify and optimize method extractors
+        # https://github.com/dart-lang/sdk/commit/b9b341f4a71b3ac8c9810eb24e318287798457ae#diff-545efb05c0f9e7191a855bca5e463f8f7f68079f74056f0040196c666b3bb8f0
+        if mm.find(b'build_generic_method_extractor_code)') == -1:
+            macros.append('-DNO_METHOD_EXTRACTOR_STUB=1')
+    
     if no_analysis:
         macros.append('-DNO_CODE_ANALYSIS=1')
     

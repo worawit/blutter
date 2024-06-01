@@ -309,8 +309,10 @@ void DartApp::loadStubs(dart::ObjectStore* store)
 	ASSERT(!stubs.contains(ep_addr)); \
 	stubs[ep_addr] = stub;
 	OBJECT_STORE_STUB_CODE_LIST(DO);
+#ifndef NO_METHOD_EXTRACTOR_STUB
 	DO(build_nongeneric_method_extractor_code, BuildNonGenericMethodExtractor);
 	DO(build_generic_method_extractor_code, BuildGenericMethodExtractor);
+#endif
 #undef DO
 	
 	code = store->throw_stub();
