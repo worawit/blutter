@@ -98,15 +98,21 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 
 		std::replace(lib_prefix.begin(), lib_prefix.end(), '$', '_');
 		std::replace(lib_prefix.begin(), lib_prefix.end(), '&', '_');
+		std::replace(lib_prefix.begin(), lib_prefix.end(), '-', '_');
+		std::replace(lib_prefix.begin(), lib_prefix.end(), '+', '_');
 		for (auto cls : lib->classes) {
 			std::string cls_prefix = cls->Name();
 			std::replace(cls_prefix.begin(), cls_prefix.end(), '$', '_');
 			std::replace(cls_prefix.begin(), cls_prefix.end(), '&', '_');
+			std::replace(cls_prefix.begin(), cls_prefix.end(), '-', '_');
+			std::replace(cls_prefix.begin(), cls_prefix.end(), '+', '_');
 			for (auto dartFn : cls->Functions()) {
 				const auto ep = dartFn->Address();
 				auto name = getFunctionName4Ida(*dartFn, cls_prefix);
 				std::replace(name.begin(), name.end(), '$', '_');
 				std::replace(name.begin(), name.end(), '&', '_');
+				std::replace(name.begin(), name.end(), '-', '_');
+				std::replace(name.begin(), name.end(), '+', '_');
 				if (show_library) {
 					of << std::format("CC Library({:#x}) = {} @ {}\n", lib->id, lib_prefix, ep);
 					of << std::format("f lib.{}={:#x} # {:#x}\n", lib_prefix, ep, lib->id);
