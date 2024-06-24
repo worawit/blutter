@@ -60,11 +60,16 @@ private:
 };
 
 struct FnParamInfo {
+	A64::Register paramReg; // when parameter is passed with register
+	int32_t paramOffset{ 0 }; // offset from FP (first param offset is 0x10. if it is optional param, value is 0)
 	A64::Register valReg;
 	int32_t localOffset{ 0 }; // offset from FP (local variable)
 	DartType* type{ nullptr };
 	std::string name;
 	std::unique_ptr<VarValue> val;
+
+	explicit FnParamInfo() {}
+	explicit FnParamInfo(A64::Register paramReg, A64::Register valReg, int32_t localOffset) : paramReg(paramReg), valReg(valReg), localOffset(localOffset) {}
 	explicit FnParamInfo(A64::Register valReg) : valReg(valReg) {}
 	explicit FnParamInfo(A64::Register valReg, int32_t localOffset) : valReg(valReg), localOffset(localOffset) {}
 	explicit FnParamInfo(A64::Register valReg, std::unique_ptr<VarValue> val) : valReg(valReg), val(std::move(val)) {}
@@ -81,6 +86,7 @@ struct FnParams {
 	int NumOptionalParam() const { return params.size() - numFixedParam; }
 	bool empty() const { return params.empty(); }
 	void add(FnParamInfo&& param) { params.push_back(std::move(param)); }
+	void addFixedParam(FnParamInfo&& param) { params.push_back(std::move(param)); numFixedParam++; }
 	FnParamInfo& back() { return params.back(); }
 	FnParamInfo& operator[](int i) { return params[i]; }
 

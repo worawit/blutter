@@ -276,6 +276,10 @@ public:
 	constexpr bool operator==(Value v) const { return reg == v; }
 	constexpr bool operator!=(Value v) const { return reg != v; }
 
+	inline bool Clear() {
+		return reg = kNoRegister;
+	}
+
 	inline bool IsSet() const {
 		return reg != kNoRegister;
 	}
@@ -379,7 +383,7 @@ public:
 		return insn->id == ARM64_INS_MOVZ || (insn->id == ARM64_INS_MOV && op_count() == 2 && ops[1].type == ARM64_OP_IMM);
 	}
 	bool IsBranch(arm64_cc cond = ARM64_CC_INVALID) { return insn->id == ARM64_INS_B && cc() == cond; }
-	bool IsDartArrayLoad() {
+	bool IsDartArrayLoad() const {
 		if (writeback())
 			return false;
 		switch (insn->id) {
@@ -394,7 +398,7 @@ public:
 			return 1;
 		return GetCsRegSize(ops[0].reg);
 	}
-	bool IsDartArrayStore() {
+	bool IsDartArrayStore() const {
 		if (writeback())
 			return false;
 		switch (insn->id) {

@@ -46,6 +46,10 @@ std::string FnParamInfo::ToString() const
 	}
 	if (valReg.IsSet() || localOffset) {
 		txt += " /* ";
+		if (paramReg.IsSet()) {
+			txt += paramReg.Name();
+			txt += " => ";
+		}
 		if (valReg.IsSet()) {
 			txt += valReg.Name();
 			if (localOffset)
