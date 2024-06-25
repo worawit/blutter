@@ -7,6 +7,8 @@ import platform
 import shutil
 import subprocess
 import sys
+import zipfile
+import tempfile
 
 CMAKE_CMD = "cmake"
 NINJA_CMD = "ninja"
@@ -31,6 +33,24 @@ def find_lib_files(indir: str):
             sys.exit("Cannot find libflutter file")
     
     return os.path.abspath(app_file), os.path.abspath(flutter_file)
+
+
+def extract_libs_from_apk(apk_file):
+    with zipfile.ZipFile(apk_file, 'r') as zip_ref:
+        lib_files = [name for name in zip_ref.namelist() if name.startswith('lib/') and name.endswith('.so')]
+        if not lib_files:
+            sys.exit("Cannot find libapp.so or libflutter.so in the APK")
+
+        temp_dir = tempfile.mkdtemp()
+        print("libs are extracted to:", temp_dir)
+        extracted_files = []
+
+        for lib_file in lib_files:
+            zip_ref.extract(lib_file, temp_dir)
+            extracted_files.append(os.path.join(temp_dir, lib_file))
+
+        return temp_dir, extracted_files
+
 
 def find_compat_macro(dart_version: str, no_analysis: bool):
     macros = []
@@ -100,7 +120,14 @@ def cmake_blutter(blutter_name: str, dartlib_name: str, name_suffix: str, macros
     subprocess.run([CMAKE_CMD, '--install', '.'], cwd=builddir, check=True)
 
 def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
-    libapp_file, libflutter_file = find_lib_files(indir)
+    if indir.endswith('.apk'):
+        indir, extracted_files = extract_libs_from_apk(indir)
+        libapp_file = next((f for f in extracted_files if "libapp.so" in f), None)
+        libflutter_file = next((f for f in extracted_files if "libflutter.so" in f), None)
+        if not libapp_file or not libflutter_file:
+            sys.exit("Cannot find libapp.so or libflutter.so in the APK")
+    else:
+        libapp_file, libflutter_file = find_lib_files(indir)
 
     # getting dart version
     from extract_dart_info import extract_dart_info
@@ -164,7 +191,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='B(l)utter',
         description='Reversing a flutter application tool')
-    # TODO: accept apk or ipa
+    # TODO: accept ipa
     parser.add_argument('indir', help='A directory directory that contains both libapp.so and libflutter.so')
     parser.add_argument('outdir', help='An output directory')
     parser.add_argument('--rebuild', action='store_true', default=False, help='Force rebuild the Blutter executable')
