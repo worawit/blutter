@@ -157,7 +157,7 @@ def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no
             assert os.path.isfile(blutter_file), "Build complete but cannot find Blutter binary: " + blutter_file
 
         # execute blutter    
-        subprocess.run([blutter_file, '-i', libapp_file, '-o', outdir])
+        subprocess.run([blutter_file, '-i', libapp_file, '-o', outdir], check=True)
 
 
 if __name__ == "__main__":
