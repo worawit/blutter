@@ -2,10 +2,14 @@
 #include "DartApp.h"
 #include <filesystem>
 
+#include <nlohmann/json.hpp>
+
 class DartDumper
 {
 public:
 	DartDumper(DartApp& app) : app(app) {};
+
+	void Dump2Json(std::filesystem::path outDir);
 
 	void Dump4Ida(std::filesystem::path outDir);
 
@@ -23,6 +27,11 @@ private:
 
 	std::string dumpInstance(dart::Object& obj, bool simpleForm = false, bool nestedObj = false, int depth = 0);
 	std::string dumpInstanceFields(dart::Object& obj, DartClass& dartCls, intptr_t ptr, intptr_t offset, bool simpleForm = false, bool nestedObj = false, int depth = 0);
+
+	void Class2Json(const char* filename);
+	void Stubs2Json(const char* filename);
+	void Disassembly2Json(const char* filename);
+	std::string GetDartRegisterString(arm64_reg reg);
 
 	void applyStruct4Ida(std::ostream& of);
 
