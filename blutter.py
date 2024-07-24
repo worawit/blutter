@@ -7,6 +7,9 @@ import platform
 import shutil
 import subprocess
 import sys
+import zipfile
+import tempfile
+
 from dartvm_fetch_build import DartLibInfo
 
 CMAKE_CMD = "cmake"
@@ -17,6 +20,7 @@ BIN_DIR = os.path.join(SCRIPT_DIR, 'bin')
 PKG_INC_DIR = os.path.join(SCRIPT_DIR, 'packages', 'include')
 PKG_LIB_DIR = os.path.join(SCRIPT_DIR, 'packages', 'lib')
 BUILD_DIR = os.path.join(SCRIPT_DIR, 'build')
+
 
 class BlutterInput:
     def __init__(self, libapp_path: str, dart_info: DartLibInfo, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
@@ -58,6 +62,28 @@ def find_lib_files(indir: str):
             sys.exit("Cannot find libflutter file")
     
     return os.path.abspath(app_file), os.path.abspath(flutter_file)
+
+
+def extract_libs_from_apk(apk_file):
+    with zipfile.ZipFile(apk_file, "r") as zip_ref:
+        lib_files = [
+            name
+            for name in zip_ref.namelist()
+            if name.startswith("lib/arm64-v8a/")
+            and name.endswith(("app.so", "flutter.so"))
+        ]
+        if not lib_files:
+            sys.exit("Cannot find libapp.so or libflutter.so in the APK")
+
+        temp_dir = tempfile.mkdtemp()
+        extracted_files = []
+
+        for lib_file in lib_files:
+            zip_ref.extract(lib_file, temp_dir)
+            extracted_files.append(os.path.join(temp_dir, lib_file))
+
+        return temp_dir, extracted_files
+
 
 def find_compat_macro(dart_version: str, no_analysis: bool):
     macros = []
@@ -178,15 +204,25 @@ def main_no_flutter(libapp_path: str, dart_version: str, outdir: str, rebuild_bl
     input = BlutterInput(libapp_path, dart_info, outdir, rebuild_blutter, create_vs_sln, no_analysis)
     build_and_run(input)
     
-def main2(libapp_path: str, libflutter_path: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
+def main2(libapp_path: str, libflutter_path: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool, temp_dir: str):
     dart_info = get_dart_lib_info(libapp_path, libflutter_path)
     input = BlutterInput(libapp_path, dart_info, outdir, rebuild_blutter, create_vs_sln, no_analysis)
     build_and_run(input)
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
 
 def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
-    libapp_file, libflutter_file = find_lib_files(indir)
+    temp_dir = ""
+    if indir.endswith(".apk"):
+        temp_dir, extracted_files = extract_libs_from_apk(indir)
+        libapp_file = next((f for f in extracted_files if "libapp.so" in f), None)
+        libflutter_file = next((f for f in extracted_files if "libflutter.so" in f), None)
+        if not libapp_file or not libflutter_file:
+            sys.exit("Cannot find libapp.so or libflutter.so in the APK")
+    else:
+        libapp_file, libflutter_file = find_lib_files(indir)
 
-    main2(libapp_file, libflutter_file, outdir, rebuild_blutter, create_vs_sln, no_analysis)
+    main2(libapp_file, libflutter_file, outdir, rebuild_blutter, create_vs_sln, no_analysis, temp_dir)
 
 
 if __name__ == "__main__":
