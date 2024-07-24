@@ -177,7 +177,7 @@ def build_and_run(input: BlutterInput):
         dbg_cmd_args = f'-i {input.libapp_path} -o {dbg_output_path}'
         subprocess.run([CMAKE_CMD, '-G', 'Visual Studio 17 2022', '-A', 'x64', '-B', input.outdir, f'-DDARTLIB={input.dart_info.lib_name}', 
                         f'-DNAME_SUFFIX={input.name_suffix}', f'-DDBG_CMD:STRING={dbg_cmd_args}'] + macros + [blutter_dir], check=True)
-        dbg_exe_dir = os.path.join(outdir, 'Debug')
+        dbg_exe_dir = os.path.join(input.outdir, 'Debug')
         os.makedirs(dbg_exe_dir, exist_ok=True)
         for filename in glob.glob(os.path.join(BIN_DIR, '*.dll')):
             shutil.copy(filename, dbg_exe_dir)
@@ -215,8 +215,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='B(l)utter',
         description='Reversing a flutter application tool')
-    # TODO: accept apk or ipa
-    parser.add_argument('indir', help='A directory directory that contains both libapp.so and libflutter.so')
+    # TODO: accept ipa
+    parser.add_argument('indir', help='An apk or a directory that contains both libapp.so and libflutter.so')
     parser.add_argument('outdir', help='An output directory')
     parser.add_argument('--rebuild', action='store_true', default=False, help='Force rebuild the Blutter executable')
     parser.add_argument('--vs-sln', action='store_true', default=False, help='Generate Visual Studio solution at <outdir>')
