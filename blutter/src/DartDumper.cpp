@@ -87,19 +87,7 @@ static bool is_valid_char(const char ch) {
 		return true;
 	}
 	switch (ch) {
-	case '(':
-	case ')':
-	case '[':
-	case ']':
-	case '<':
-	case '+':
-	case '-':
-	case '>':
-	case '$':
-	case '%':
-	case '@':
 	case '.':
-	case ',':
 	case ':':
 	case '_':
 		return true;
@@ -169,6 +157,21 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 		}
 		show_library = true;
 	}
+	for (auto& item : app.stubs) {
+		auto stub = item.second;
+		const auto ep = stub->Address();
+		std::string name = stub->FullName();
+		std::replace(name.begin(), name.end(), '<', '_');
+		std::replace(name.begin(), name.end(), '>', '_');
+		std::replace(name.begin(), name.end(), ',', '_');
+		std::replace(name.begin(), name.end(), ' ', '_');
+		std::replace(name.begin(), name.end(), '$', '_');
+		std::replace(name.begin(), name.end(), '&', '_');
+		std::replace(name.begin(), name.end(), '-', '_');
+		std::replace(name.begin(), name.end(), '+', '_');
+		of << std::format("f method.stub.{}={:#x}\n", name.c_str(), ep);
+	}
+
 	of << "f pptr=x27\n"; // TODO: hardcoded value
 	auto comments = DumpStructHeaderFile((outDir / "r2_dart_struct.h").string());
 	for (const auto& [offset, comment] : comments) {
