@@ -3,6 +3,7 @@
 #include <fstream>
 #include <filesystem>
 #include "Util.h"
+#include "DartDumper.h"
 
 #ifndef FRIDA_TEMPLATE_DIR
 #define FRIDA_TEMPLATE_DIR "scripts"
@@ -149,4 +150,18 @@ void FridaWriter::Create(const char* filename)
 		}
 	}
 	of << "];\n";
+	of << "function GetFuncPtrMap(){\nreturn new Map([\n";
+	for (auto lib : app.libs) {
+		std::string lib_prefix = lib->GetName();
+		for (auto cls : lib->classes) {
+			std::string cls_prefix = cls->Name();
+			for (auto dartFn : cls->Functions()) {
+				const auto ep = dartFn->Address();
+				auto name = DartDumper::getFunctionName4Ida(*dartFn, cls_prefix);
+				of << "[" << std::format("{:#x}, \"{}_{}::{}_{:x}\"", ep, lib_prefix, cls_prefix, name.c_str(), ep) << "],\n";
+			}
+		}
+	}
+	of << "]);\n}\n";
+
 }
