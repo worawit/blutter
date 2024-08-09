@@ -113,6 +113,7 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 				std::replace(name.begin(), name.end(), '&', '_');
 				std::replace(name.begin(), name.end(), '-', '_');
 				std::replace(name.begin(), name.end(), '+', '_');
+				std::replace(name.begin(), name.end(), '?', '_');
 				if (show_library) {
 					of << std::format("CC Library({:#x}) = {} @ {}\n", lib->id, lib_prefix, ep);
 					of << std::format("f lib.{}={:#x} # {:#x}\n", lib_prefix, ep, lib->id);
@@ -147,6 +148,7 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 		std::replace(name.begin(), name.end(), '&', '_');
 		std::replace(name.begin(), name.end(), '-', '_');
 		std::replace(name.begin(), name.end(), '+', '_');
+		std::replace(name.begin(), name.end(), '?', '_');
 		of << std::format("f method.{}_{:x}={:#x}\n", name.c_str(), ep, ep);
 	}
 
