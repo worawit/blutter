@@ -123,7 +123,7 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 					of << std::format("f class.{}.{}={:#x} # {:#x}\n", lib_prefix, cls_prefix, ep, cls->Id());
 					show_class = false;
 				}
-				of << std::format("f method.{}.{}.{}={:#x}\n", lib_prefix, cls_prefix, name.c_str(), ep);
+				of << std::format("f method.{}.{}.{}_{:x}={:#x}\n", lib_prefix, cls_prefix, name.c_str(), ep, ep);
 				if (dartFn->HasMorphicCode()) {
 					of << std::format("f method.{}.{}.{}.miss={:#x}\n", lib_prefix, cls_prefix, name.c_str(), 
 							dartFn->PayloadAddress());
@@ -147,7 +147,7 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 		std::replace(name.begin(), name.end(), '&', '_');
 		std::replace(name.begin(), name.end(), '-', '_');
 		std::replace(name.begin(), name.end(), '+', '_');
-		of << std::format("f method.{}={:#x}\n", name.c_str(), ep);
+		of << std::format("f method.{}_{:x}={:#x}\n", name.c_str(), ep, ep);
 	}
 
 }
