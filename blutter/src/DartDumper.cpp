@@ -54,6 +54,18 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 		fnName = fnName.substr(periodPos + 1);
 	}
 
+	// fnNames: #0#4internal, #0#1internal gives invalid name in IDA due to '#'
+	// lib file: https://github.com/worawit/blutter/issues/93#issuecomment-2283490634
+	for (size_t pos = 0; pos < fnName.size(); ++pos) {
+		if (fnName[pos] == '@' && pos + 1 < fnName.size() && fnName[pos + 1] == '#') {
+			fnName.replace(pos, 2, "_");
+		} else if (fnName[pos] == '0' && pos + 1 < fnName.size() && fnName[pos + 1] == '#') {
+			fnName.replace(pos, 2, "0");
+		} else if (fnName[pos] == '#') {
+			fnName[pos] = '_';
+		}
+	}
+
 	if (OP_MAP.contains(fnName)) {
 		return prefix + "op_" + OP_MAP[fnName];
 	}
