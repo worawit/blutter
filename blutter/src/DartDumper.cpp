@@ -32,6 +32,16 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 		return "_anon_closure";
 	}
 
+	if (fnName.starts_with("#")) {
+		fnName.replace(0, 1, "@");
+	}
+
+	for (size_t pos = 0; ; pos += 1) {
+		pos = fnName.find("|_", pos);
+		if (pos == std::string::npos) break;
+		fnName.replace(pos, 2, "_");
+	}
+
 	auto periodPos = fnName.find('.');
 	std::string prefix;
 	if (dartFn.IsStatic() && dartFn.Kind() == DartFunction::NORMAL && periodPos != std::string::npos) {
