@@ -96,6 +96,14 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 			for (auto dartFn : cls->Functions()) {
 				const auto ep = dartFn->Address();
 				auto name = getFunctionName4Ida(*dartFn, cls_prefix);
+				std::replace(name.begin(), name.end(), '<', '@');
+				std::replace(name.begin(), name.end(), '>', '@');
+				std::replace(name.begin(), name.end(), ',', '&');
+				std::replace(name.begin(), name.end(), ' ', '_');
+				std::replace(name.begin(), name.end(), '{', '(');
+				std::replace(name.begin(), name.end(), '}', ')');
+				std::replace(name.begin(), name.end(), '|', '.');
+				std::replace(name.begin(), name.end(), '#', '$');
 				of << std::format("ida_funcs.add_func({:#x}, {:#x})\n", ep, ep + dartFn->Size());
 				of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}\")\n", ep, lib_prefix, cls_prefix, name.c_str(), ep);
 				if (dartFn->HasMorphicCode()) {
@@ -114,6 +122,10 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 		std::replace(name.begin(), name.end(), '>', '@');
 		std::replace(name.begin(), name.end(), ',', '&');
 		std::replace(name.begin(), name.end(), ' ', '_');
+		std::replace(name.begin(), name.end(), '{', '(');
+		std::replace(name.begin(), name.end(), '}', ')');
+		std::replace(name.begin(), name.end(), '|', '.');
+		std::replace(name.begin(), name.end(), '#', '$');
 		of << std::format("idaapi.set_name({:#x}, \"{}_{:x}\")\n", ep, name.c_str(), ep);
 		if (stub->Size() == 0)
 			continue;
