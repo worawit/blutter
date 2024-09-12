@@ -53,7 +53,7 @@ static void initThreadOffsetNames()
 	threadOffsetNames[dart::Thread::dart_stream_offset()] = "dart_stream";
 	//threadOffsetNames[dart::Thread::service_extension_stream_offset()] = "service_extension_stream";
 	threadOffsetNames[dart::Thread::store_buffer_block_offset()] = "store_buffer_block";
-	threadOffsetNames[dart::Thread::marking_stack_block_offset()] = "marking_stack_block";
+	//threadOffsetNames[dart::Thread::marking_stack_block_offset()] = "marking_stack_block"; // removed in Dart 3.5.0 and split into old and new
 	threadOffsetNames[dart::Thread::top_exit_frame_info_offset()] = "top_exit_frame_info";
 	//threadOffsetNames[dart::Thread::heap_offset()] = "heap"; // removed in Dart 3.1.0
 	threadOffsetNames[dart::Thread::top_offset()] = "top";
