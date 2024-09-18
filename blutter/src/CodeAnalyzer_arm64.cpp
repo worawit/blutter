@@ -180,7 +180,9 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 static inline void handleDecompressPointer(AsmIterator& insn, arm64_reg reg) {
 	INSN_ASSERT(insn.id() == ARM64_INS_ADD);
 	INSN_ASSERT(insn.ops(0).reg == insn.ops(1).reg && insn.ops(0).reg == reg);
+#if defined(DART_COMPRESSED_POINTERS)
 	INSN_ASSERT(insn.ops(2).reg == CSREG_DART_HEAP && insn.ops(2).shift.value == 32);
+#endif
 	++insn;
 }
 
@@ -2201,6 +2203,7 @@ std::unique_ptr<MoveRegInstr> FunctionAnalyzer::processMoveRegInstr(AsmIterator&
 
 std::unique_ptr<DecompressPointerInstr> FunctionAnalyzer::processDecompressPointerInstr(AsmIterator& insn)
 {
+#if defined(DART_COMPRESSED_POINTERS)
 	if (insn.id() == ARM64_INS_ADD && insn.ops(2).reg == CSREG_DART_HEAP && insn.ops(2).shift.value == 32) {
 		INSN_ASSERT(insn.ops(0).reg == insn.ops(1).reg);
 		const auto reg = A64::Register{ insn.ops(0).reg };
@@ -2208,6 +2211,7 @@ std::unique_ptr<DecompressPointerInstr> FunctionAnalyzer::processDecompressPoint
 		++insn;
 		return std::make_unique<DecompressPointerInstr>(insn.Wrap(ins0_addr), reg);
 	}
+#endif
 	return nullptr;
 }
 
@@ -2959,7 +2963,9 @@ std::unique_ptr<WriteBarrierInstr> FunctionAnalyzer::processWriteBarrierInstr(As
 
 	INSN_ASSERT(insn.id() == ARM64_INS_TST);
 	INSN_ASSERT(insn.ops(0).reg == CSREG_DART_TMP);
+#if defined(DART_COMPRESSED_POINTERS)
 	INSN_ASSERT(insn.ops(1).reg == CSREG_DART_HEAP);
+#endif
 	INSN_ASSERT(insn.ops(1).shift.type == ARM64_SFT_LSR && insn.ops(1).shift.value == 32);
 	++insn;
 
