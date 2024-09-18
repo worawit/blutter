@@ -82,6 +82,40 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 	return prefix + fnName;
 }
 
+static bool is_valid_char(const char ch) {
+	if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || isdigit(ch)) {
+		return true;
+	}
+	switch (ch) {
+	case '(':
+	case ')':
+	case '[':
+	case ']':
+	case '<':
+	case '+':
+	case '-':
+	case '>':
+	case '$':
+	case '%':
+	case '@':
+	case '.':
+	case ',':
+	case ':':
+	case '_':
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void filterString(std::string &str) {
+	for (char& ch : str) {
+		if (!is_valid_char(ch)) {
+			ch = '_';
+		}
+	}
+}
+
 void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 {
 	std::filesystem::create_directory(outDir);
@@ -134,6 +168,16 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 			show_class = true;
 		}
 		show_library = true;
+	}
+	of << "f pptr=x27\n"; // TODO: hardcoded value
+	auto comments = DumpStructHeaderFile((outDir / "r2_dart_struct.h").string());
+	for (const auto& [offset, comment] : comments) {
+		if (comment.find("String:") != -1) {
+			std::string flagFromComment = comment;
+			filterString(flagFromComment);
+			of << "f pp." << flagFromComment << "=pptr+" << offset << "\n";
+			of << "'@0x0+" << offset << "'CC " << comment << "\n";
+		}
 	}
 }
 
