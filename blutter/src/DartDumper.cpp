@@ -110,6 +110,7 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 	std::ofstream of((outDir / "addNames.r2").string());
 	of << "# create flags for libraries, classes and methods\n";
 
+	of << "e emu.str=true\n";
 	of << std::format("f app.base = {:#x}\n", app.base());
 	of << std::format("f app.heap_base = {:#x}\n", app.heap_base());
 
@@ -117,41 +118,33 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 	bool show_class = true;
 	for (auto lib : app.libs) {
 		std::string lib_prefix = lib->GetName();
-
-		std::replace(lib_prefix.begin(), lib_prefix.end(), '$', '_');
-		std::replace(lib_prefix.begin(), lib_prefix.end(), '&', '_');
-		std::replace(lib_prefix.begin(), lib_prefix.end(), '-', '_');
-		std::replace(lib_prefix.begin(), lib_prefix.end(), '+', '_');
+		filterString(lib_prefix);
 		for (auto cls : lib->classes) {
 			std::string cls_prefix = cls->Name();
-			std::replace(cls_prefix.begin(), cls_prefix.end(), '$', '_');
-			std::replace(cls_prefix.begin(), cls_prefix.end(), '&', '_');
-			std::replace(cls_prefix.begin(), cls_prefix.end(), '-', '_');
-			std::replace(cls_prefix.begin(), cls_prefix.end(), '+', '_');
+			filterString(cls_prefix);
 			for (auto dartFn : cls->Functions()) {
 				const auto ep = dartFn->Address();
-				auto name = getFunctionName4Ida(*dartFn, cls_prefix);
-				std::replace(name.begin(), name.end(), '$', '_');
-				std::replace(name.begin(), name.end(), '&', '_');
-				std::replace(name.begin(), name.end(), '-', '_');
-				std::replace(name.begin(), name.end(), '+', '_');
-				std::replace(name.begin(), name.end(), '?', '_');
+				std::string name = getFunctionName4Ida(*dartFn, cls_prefix);
+				filterString(name);
 				if (show_library) {
-					of << std::format("CC Library({:#x}) = {} @ {}\n", lib->id, lib_prefix, ep);
-					of << std::format("f lib.{}={:#x} # {:#x}\n", lib_prefix, ep, lib->id);
+					of << std::format("'@{:#x}'CC Library({:#x}) = {}\n", ep, lib->id, lib->GetName());
+					of << std::format("'@{:#x}'f lib.{}\n", ep, lib_prefix);
 					show_library = false;
 				}
 				if (show_class) {
-					of << std::format("CC Class({:#x}) = {} @ {}\n", cls->Id(), cls_prefix, ep);
-					of << std::format("f class.{}.{}={:#x} # {:#x}\n", lib_prefix, cls_prefix, ep, cls->Id());
+					of << std::format("'@{:#x}'CC Class({:#x}) = {}\n", ep, cls->Id(), cls->Name());
+					of << std::format("'@{:#x}'f class.{}.{}\n", ep, lib_prefix, cls_prefix);
 					show_class = false;
 				}
-				of << std::format("f method.{}.{}.{}_{:x}={:#x}\n", lib_prefix, cls_prefix, name.c_str(), ep, ep);
+				of << std::format("'@{:#x}'f method.{}.{}.{}\n", ep, lib_prefix, cls_prefix, name);
+				of << std::format("'@{:#x}'ic+{}.{}\n", ep, cls_prefix, name);
 				if (dartFn->HasMorphicCode()) {
-					of << std::format("f method.{}.{}.{}.miss={:#x}\n", lib_prefix, cls_prefix, name.c_str(), 
-							dartFn->PayloadAddress());
-					of << std::format("f method.{}.{}.{}.check={:#x}\n", lib_prefix, cls_prefix, name.c_str(), 
-							dartFn->MonomorphicAddress());
+					of << std::format("'@{:#x}'f method.{}.{}.{}.miss\n",
+							dartFn->PayloadAddress(),
+							lib_prefix, cls_prefix, name);
+					of << std::format("'@{:#x}'f method.{}.{}.{}.check\n",
+							dartFn->MonomorphicAddress(),
+							lib_prefix, cls_prefix, name);
 				}
 			}
 			show_class = true;
@@ -162,26 +155,19 @@ void DartDumper::Dump4Radare2(std::filesystem::path outDir)
 		auto stub = item.second;
 		const auto ep = stub->Address();
 		std::string name = stub->FullName();
-		std::replace(name.begin(), name.end(), '<', '_');
-		std::replace(name.begin(), name.end(), '>', '_');
-		std::replace(name.begin(), name.end(), ',', '_');
-		std::replace(name.begin(), name.end(), ' ', '_');
-		std::replace(name.begin(), name.end(), '$', '_');
-		std::replace(name.begin(), name.end(), '&', '_');
-		std::replace(name.begin(), name.end(), '-', '_');
-		std::replace(name.begin(), name.end(), '+', '_');
-		std::replace(name.begin(), name.end(), '?', '_');
-		of << std::format("f method.stub.{}_{:x}={:#x}\n", name.c_str(), ep, ep);
+		std::string flagName = name;
+		filterString(flagName);
+		of << std::format("'@{:#x}'f method.stub.{}\n", ep, flagName);
 	}
-
-	of << "f pptr=x27\n"; // TODO: hardcoded value
+	of << "dr x27=`e anal.gp`\n";
+	of << "'f PP=x27\n";
 	auto comments = DumpStructHeaderFile((outDir / "r2_dart_struct.h").string());
 	for (const auto& [offset, comment] : comments) {
 		if (comment.find("String:") != -1) {
 			std::string flagFromComment = comment;
 			filterString(flagFromComment);
-			of << "f pp." << flagFromComment << "=pptr+" << offset << "\n";
-			of << "'@0x0+" << offset << "'CC " << comment << "\n";
+			of << "f pp." << flagFromComment << "=PP+" << offset << "\n";
+			of << "'@PP+" << offset << "'CC " << comment << "\n";
 		}
 	}
 }
