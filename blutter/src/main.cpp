@@ -52,6 +52,7 @@ int main(int argc, char** argv)
 #endif
 		dumper.DumpCode((outDir / "asm").string().c_str());
 		dumper.Dump4Ida(outDir / "ida_script");
+		dumper.Dump4Radare2(outDir / "r2_script");
 
 		std::cout << "Generating Frida script\n";
 		FridaWriter fwriter{ app };
