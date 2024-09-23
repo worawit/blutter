@@ -143,6 +143,7 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 	}
 
 
+#ifndef IDA_FCN
 	// Note: create struct with a lot of member by ida script is very slow
 	//   use header file then adding comment is much faster
 	auto comments = DumpStructHeaderFile((outDir / "ida_dart_struct.h").string());
@@ -162,6 +163,20 @@ def create_Dart_structs():
 	for (const auto& [offset, comment] : comments) {
 		of << "\tida_struct.set_member_cmt(ida_struct.get_member(struc, " << offset << "), '''" << comment << "''', True)\n";
 	}
+#else
+	auto comments = DumpStructHeaderFile((outDir / "ida_dart_struct.h").string());
+	of << R"CBLOCK(
+import os
+def create_Dart_structs():
+	sid1 = idc.get_struc_id("DartThread")
+	if sid1 != idc.BADADDR:
+		return sid1, idc.get_struc_id("DartObjectPool")
+	hdr_file = os.path.join(os.path.dirname(__file__), 'ida_dart_struct.h')
+	idaapi.idc_parse_types(hdr_file, idc.PT_FILE)
+	sid1 = idc.import_type(-1, "DartThread")
+	sid2 = idc.import_type(-1, "DartObjectPool")
+)CBLOCK";
+#endif
 	of << "\treturn sid1, sid2\n";
 	of << "thrs, pps = create_Dart_structs()\n";
 
