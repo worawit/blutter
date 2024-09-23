@@ -229,7 +229,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-analysis', action='store_true', default=False, help='Do not build with code analysis')
     # rare usage scenario
     parser.add_argument('--dart-version', help='Run without libflutter (indir become libapp.so) by specify dart version such as "3.4.2_android_arm64"')
-    parser.add_argument("--ida-fcn", action="store_true", default=False, help="Generate IDA function names script, Doesn't Generates Thread and Object Pool structs",)
+    parser.add_argument("--ida-fcn", action="store_true", default=False, help="Generate IDA function names script, Doesn't Generates Thread and Object Pool structs comments",)
     args = parser.parse_args()
 
     if args.dart_version is None:
