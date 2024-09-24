@@ -31,6 +31,16 @@ def load_source(modname, filename):
     return module
 """
 
+dart_versions = {
+    "3.6": ["3.4.0", "3.4.1", "3.4.2", "3.4.3", "3.4.4"],
+    "3.3": ["3.3.0", "3.3.1", "3.3.2", "3.3.3", "3.3.4"],
+    "3.5": ["3.5.0", "3.5.1", "3.5.2", "3.5.3"],
+    "3.0_aa": ["3.0.0", "3.0.1", "3.0.2"],
+    "3.0_90": ["3.0.3", "3.0.4", "3.0.5", "3.0.6", "3.0.7"],
+    "3.1": ["3.1.0", "3.1.1", "3.1.2", "3.1.3", "3.1.4", "3.1.5"],
+    "3.2": ["3.2.0", "3.2.1", "3.2.2", "3.2.3", "3.2.4", "3.2.5", "3.2.6"],
+}
+
 class DartLibInfo:
     def __init__(self, version: str, os_name: str, arch: str, has_compressed_ptrs: bool = None, snapshot_hash: str = None):
         self.version = version
@@ -43,6 +53,17 @@ class DartLibInfo:
             self.has_compressed_ptrs = os_name != 'ios'
         else:
             self.has_compressed_ptrs = has_compressed_ptrs
+
+        if os.path.exists(os.path.join(SCRIPT_DIR, "bin")):
+            file_name_version = []
+            for file in os.listdir(os.path.join(SCRIPT_DIR, "bin")):
+                if file.startswith("blutter_dartvm") and file.endswith(f"{os_name}_{arch}"):
+                    file_name_version.append(file.split("_")[1].replace('dartvm', ''))
+            for key, versions in dart_versions.items():
+                if version in versions and any(v in versions for v in file_name_version):
+                    matched_version = next(v for v in file_name_version if v in versions)
+                    self.lib_name = f"dartvm{matched_version}_{os_name}_{arch}"
+                    return
         self.lib_name = f'dartvm{version}_{os_name}_{arch}'
 
 
