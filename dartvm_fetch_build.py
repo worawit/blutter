@@ -43,7 +43,6 @@ dart_versions = {
 
 class DartLibInfo:
     def __init__(self, version: str, os_name: str, arch: str, has_compressed_ptrs: bool = None, snapshot_hash: str = None):
-        self.version = version
         self.os_name = os_name
         self.arch = arch
         self.snapshot_hash = snapshot_hash
@@ -65,7 +64,9 @@ class DartLibInfo:
                 if version in versions and any(v in versions for v in file_name_version):
                     matched_version = next(v for v in file_name_version if v in versions)
                     self.lib_name = f"dartvm{matched_version}_{os_name}_{arch}"
+                    self.version = matched_version
                     return
+        self.version = version
         self.lib_name = f'dartvm{version}_{os_name}_{arch}'
 
 
