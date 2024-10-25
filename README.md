@@ -13,7 +13,7 @@ This application uses C++20 Formatting library. It requires very recent C++ comp
 I recommend using Linux OS (only tested on Deiban sid/trixie) because it is easy to setup.
 
 ### Debian Unstable (gcc 13)
-[!NOTE]
+**_NOTE:_**
 Use ONLY Debian/Ubuntu version that provides gcc>=13 from its own main repository.
 Using ported gcc to old Debian/Ubuntu version does not work.
 
