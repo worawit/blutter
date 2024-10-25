@@ -2261,6 +2261,7 @@ std::unique_ptr<InitAsyncInstr> FunctionAnalyzer::processInitAsyncInstr(AsmItera
 				fnInfo->returnType = returnType;
 				const auto start = il->Start();
 				fnInfo->RemoveLastIL();
+				setAsmTextDataCall(insn.address(), (uint64_t)insn.ops(0).imm);
 				++insn;
 				return std::make_unique<InitAsyncInstr>(insn.Wrap(start), returnType);
 			}
@@ -2468,6 +2469,7 @@ std::unique_ptr<TestTypeInstr> FunctionAnalyzer::processInstanceofNoTypeArgument
 			else { // typeCheckCid == dart::kNumberCid || typeCheckCid == 0 (object)
 				INSN_ASSERT(typeName == vtype->ToString() || dartStub->kind == DartStub::DefaultTypeTestStub || dartStub->kind == DartStub::DefaultNullableTypeTestStub);
 			}
+			setAsmTextDataCall(insn.address(), (uint64_t)insn.ops(0).imm);
 			++insn;
 		}
 		else {
@@ -2600,6 +2602,7 @@ std::unique_ptr<BoxInt64Instr> FunctionAnalyzer::processBoxInt64Instr(AsmIterato
 
 			if (insn.id() == ARM64_INS_BL) {
 				assertAllocateMintStub(app.GetFunction(insn.ops(0).imm));
+				setAsmTextDataCall(insn.address(), (uint64_t)insn.ops(0).imm);
 				++insn;
 			}
 			else {
@@ -2760,6 +2763,7 @@ std::unique_ptr<ILInstr> FunctionAnalyzer::processLoadFieldTableInstr(AsmIterato
 						ASSERT(dartFn->IsStub());
 						const auto stubKind = reinterpret_cast<DartStub*>(dartFn)->kind;
 						INSN_ASSERT(stubKind == DartStub::InitLateStaticFieldStub || stubKind == DartStub::InitLateFinalStaticFieldStub);
+						setAsmTextDataCall(insn.address(), (uint64_t)insn.ops(0).imm);
 						++insn;
 					}
 					else {
@@ -2801,6 +2805,7 @@ std::unique_ptr<ILInstr> FunctionAnalyzer::processLoadFieldTableInstr(AsmIterato
 					auto fn = app.GetFunction(insn2.ops(0).imm);
 					auto stub = fn->AsStub();
 					INSN_ASSERT(stub->kind == DartStub::LateInitializationErrorSharedWithoutFPURegsStub || stub->kind == DartStub::LateInitializationErrorSharedWithFPURegsStub);
+					setAsmTextDataCall(insn2.address(), (uint64_t)insn.ops(0).imm);
 					insn2.Next();
 					// load static field but throw an exception if it is not initialized
 					return std::make_unique<LoadStaticFieldInstr>(insn.Wrap(marker.Take()), dstReg, field_offset);
@@ -2987,6 +2992,7 @@ std::unique_ptr<WriteBarrierInstr> FunctionAnalyzer::processWriteBarrierInstr(As
 		const auto stubKind = reinterpret_cast<DartStub*>(stub)->kind;
 		INSN_ASSERT(stubKind == DartStub::WriteBarrierWrappersStub || stubKind == DartStub::ArrayWriteBarrierStub);
 		isArray = stubKind == DartStub::ArrayWriteBarrierStub;
+		setAsmTextDataCall(insn.address(), (uint64_t)insn.ops(0).imm);
 		++insn;
 	}
 	else {
