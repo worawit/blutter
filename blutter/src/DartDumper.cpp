@@ -640,6 +640,18 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		const auto& libName = dart::String::Handle(lib.url());
 		return std::format("LibraryPrefix: {}, target lib: {} ({})", name.ToCString(), libName.ToCString(), lib.toplevel_class().untag()->id());
 	}
+	case dart::kInt32x4Cid: {
+		const auto& simd = dart::Int32x4::Cast(obj);
+		return std::format("Int32x4: ({}, {}, {}, {})", simd.x(), simd.y(), simd.z(), simd.w());
+	}
+	case dart::kFloat32x4Cid: {
+		const auto& simd = dart::Float32x4::Cast(obj);
+		return std::format("Float32x4: ({}, {}, {}, {})", simd.x(), simd.y(), simd.z(), simd.w());
+	}
+	case dart::kFloat64x2Cid: {
+		const auto& simd = dart::Float64x2::Cast(obj);
+		return std::format("Float64x2: ({}, {})", simd.x(), simd.y());
+	}
 	case dart::kInstanceCid:
 		return std::format("Obj!Object@{:x}", (uint32_t)(intptr_t)obj.ptr());
 	// TODO: enum subclass
