@@ -231,24 +231,28 @@ DartTypeParameter* DartTypeDb::FindOrAdd(dart::TypeParameterPtr typeParamPtr)
 	auto dartTypeParam = new DartTypeParameter(typeParam.IsNullable(), (uint16_t)typeParam.base(), (uint16_t)typeParam.index(), typeParam.IsClassTypeParameter());
 	typesMap[ptr] = dartTypeParam;
 
-	// below code is from TypeParameter::bound()
-	// but in Dart 3.5, owner.ptr() might be NULL (zero value)
-	if (typeParam.IsFunctionTypeParameter()) {
-		const auto& owner = dart::FunctionType::Handle(typeParam.parameterized_function_type());
-		const auto& type_parameters = dart::TypeParameters::Handle(owner.type_parameters());
-		dartTypeParam->bound = FindOrAdd(type_parameters.BoundAt(typeParam.index() - typeParam.base()));
-	}
-	else {
-		const auto& owner = dart::Class::Handle(typeParam.parameterized_class());
-		// extra check
-		if (owner.IsNull() || (intptr_t)owner.ptr() == 0) {
-			dartTypeParam->bound = FindOrAdd(dart::Isolate::Current()->group()->object_store()->nullable_object_type());
-		}
-		else {
+	#ifdef NO_PARAMETERIZED_FUNCTION_TYPE
+		dartTypeParam->bound = FindOrAdd(typeParam.bound());
+	#else
+		// below code is from TypeParameter::bound()
+		// but in Dart 3.5, owner.ptr() might be NULL (zero value)
+		if (typeParam.IsFunctionTypeParameter()) {
+			const auto& owner = dart::FunctionType::Handle(typeParam.parameterized_function_type());
 			const auto& type_parameters = dart::TypeParameters::Handle(owner.type_parameters());
 			dartTypeParam->bound = FindOrAdd(type_parameters.BoundAt(typeParam.index() - typeParam.base()));
 		}
-	}
+		else {
+			const auto& owner = dart::Class::Handle(typeParam.parameterized_class());
+			// extra check
+			if (owner.IsNull() || (intptr_t)owner.ptr() == 0) {
+				dartTypeParam->bound = FindOrAdd(dart::Isolate::Current()->group()->object_store()->nullable_object_type());
+			}
+			else {
+				const auto& type_parameters = dart::TypeParameters::Handle(owner.type_parameters());
+				dartTypeParam->bound = FindOrAdd(type_parameters.BoundAt(typeParam.index() - typeParam.base()));
+			}
+		}
+	#endif
 
 	return dartTypeParam;
 }
