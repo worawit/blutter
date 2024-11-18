@@ -126,8 +126,10 @@ def find_compat_macro(dart_version: str, no_analysis: bool):
     if no_analysis:
         macros.append('-DNO_CODE_ANALYSIS=1')
 
-    if mm.find(b"parameterized_function_type") == -1:
-        macros.append("-DNO_PARAMETERIZED_FUNCTION_TYPE=1")
+    with open(os.path.join(vm_path, "object.h"), "rb") as f:
+        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        if mm.find(b"parameterized_function_type") == -1:
+            macros.append("-DNO_PARAMETERIZED_FUNCTION_TYPE=1")
     
     return macros
 
