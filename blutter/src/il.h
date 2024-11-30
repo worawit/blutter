@@ -440,8 +440,10 @@ struct ArrayOp {
 		if (size == 8) return 3;
 		if (size == 4) return 2;
 		if (size == 2) return 1;
-		return 0;
+		if (size == 1) return 0;
+		return 255;
 	}
+	// TODO: correct List type or typed_data type (Int32x4, ...)
 	std::string ToString() {
 		switch (arrType) {
 		case List: return std::format("List_{}", size);

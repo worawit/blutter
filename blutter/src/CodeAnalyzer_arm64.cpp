@@ -144,6 +144,10 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 		}
 		case dart::kSubtypeTestCacheCid:
 			return new VarSubtypeTestCache();
+		case dart::kInt32x4Cid:
+		case dart::kFloat32x4Cid:
+		case dart::kFloat64x2Cid:
+			return new VarExpression(std::format("{}", obj.ToCString()), (int32_t)obj.GetClassId()); 
 		case dart::kLibraryPrefixCid:
 			// TODO: handle LibraryPrefix object
 		case dart::kInstanceCid:
@@ -2912,7 +2916,8 @@ std::unique_ptr<AllocateObjectInstr> FunctionAnalyzer::processTryAllocateObject(
 		INSN_ASSERT(insn.ops(0).reg == inst_reg);
 		INSN_ASSERT(insn.ops(1).reg == inst_reg);
 		const auto inst_size = insn.ops(2).imm;
-		INSN_ASSERT(inst_size == 0x10);
+		// 0x20 for typed_data object
+		INSN_ASSERT(inst_size == 0x10 || inst_size == 0x20);
 		++insn;
 
 		INSN_ASSERT(insn.id() == ARM64_INS_CMP);
@@ -3093,7 +3098,7 @@ std::unique_ptr<WriteBarrierInstr> FunctionAnalyzer::processWriteBarrierInstr(As
 	return std::make_unique<WriteBarrierInstr>(insn.Wrap(marker.Take()), objReg, valReg, isArray);
 }
 
-static ArrayOp getArrayOp(AsmIterator& insn)
+static ArrayOp getArrayOp(AsmIterator& insn, int32_t arr_data_offset)
 {
 	ArrayOp op;
 	if (insn.writeback())
@@ -3103,13 +3108,13 @@ static ArrayOp getArrayOp(AsmIterator& insn)
 		// for 64 bit integer, LDUR is used too
 		const auto regSize = GetCsRegSize(insn.ops(0).reg);
 		//if (regSize == dart::kCompressedWordSize)
-		return ArrayOp(regSize, true, ArrayOp::Unknown);
+		return ArrayOp(regSize, true, arr_data_offset == 0x17 ? ArrayOp::List : ArrayOp::Unknown);
 		//return ArrayOp(regSize, true, ArrayOp::TypedUnknown);
 	}
 	case ARM64_INS_LDURSW:
 		return ArrayOp(4, true, ArrayOp::TypedSigned);
 	case ARM64_INS_LDRB:
-		return ArrayOp(1, true, ArrayOp::TypedUnsigned);
+		return ArrayOp(1, true, arr_data_offset == 0x17 ? ArrayOp::List : ArrayOp::TypedUnsigned);
 	case ARM64_INS_LDRSB:
 		return ArrayOp(1, true, ArrayOp::TypedSigned);
 	case ARM64_INS_LDRH:
@@ -3119,7 +3124,7 @@ static ArrayOp getArrayOp(AsmIterator& insn)
 	case ARM64_INS_STUR: {
 		const auto regSize = GetCsRegSize(insn.ops(0).reg);
 		//if (regSize == dart::kCompressedWordSize)
-		return ArrayOp(regSize, false, ArrayOp::Unknown);
+		return ArrayOp(regSize, false, arr_data_offset == 0x17 ? ArrayOp::List : ArrayOp::Unknown);
 		//return ArrayOp(regSize, false, ArrayOp::TypedUnknown);
 	}
 	case ARM64_INS_STRB:
@@ -3225,12 +3230,19 @@ std::unique_ptr<ILInstr> FunctionAnalyzer::processLoadStore(AsmIterator& insn)
 			const auto arr_data_offset = insn.ops(1).mem.disp;
 			if (insn.ops(1).mem.base != tmpReg || arr_data_offset < 8)
 				return nullptr;
-			const auto arrayOp = getArrayOp(insn);
+			const auto arrayOp = getArrayOp(insn, arr_data_offset);
 			if (!arrayOp.IsArrayOp())
 				return nullptr;
 			const auto idxShiftVal = arrayOp.SizeLog2();
-			if (shift.value == idxShiftVal) {
+			if (arrayOp.arrType == ArrayOp::List) {
+				// Uint8List or Int32x4
+				// do nothing for now
+			}
+			else if (shift.value == idxShiftVal) {
 				// nothing to do
+				if (idxShiftVal == 0) {
+					// TODO: Uint8List
+				}
 			}
 			else if (shift.value + 1 == idxShiftVal) {
 				//if (idxShiftVal)
@@ -3238,7 +3250,8 @@ std::unique_ptr<ILInstr> FunctionAnalyzer::processLoadStore(AsmIterator& insn)
 				// TODO: this index is Smi
 			}
 			else {
-				FATAL("invalid shift for array operation");
+				//FATAL("invalid shift for array operation");
+				INSN_ASSERT(shift.value == idxShiftVal);
 			}
 			bool isTypedData = dart::UntaggedTypedData::payload_offset() - dart::kHeapObjectTag == arr_data_offset;
 			INSN_ASSERT(isTypedData || arr_data_offset == dart::Array::data_offset() - dart::kHeapObjectTag);
@@ -3258,7 +3271,7 @@ std::unique_ptr<ILInstr> FunctionAnalyzer::processLoadStore(AsmIterator& insn)
 
 	if (insn.ops(1).mem.base != CSREG_DART_FP && insn.ops(1).mem.disp != 0) {
 		// load/store with fixed offset
-		const auto arrayOp = getArrayOp(insn);
+		const auto arrayOp = getArrayOp(insn, insn.ops(1).mem.disp);
 		if (arrayOp.IsArrayOp()) {
 			const auto valReg = A64::Register{ insn.ops(0).reg };
 			const auto objReg = A64::Register{ insn.ops(1).mem.base };
