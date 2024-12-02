@@ -1,20 +1,95 @@
+function GetOptions(){
+    const opts = new BlutterOpts();
+    opts.IgnoreByClassFuncRegex(/(anim|battery|anon_|build|widget|Dependencies|Observer|Render)/i);
+    //opts.SpyByClassFuncRegex(/interestingclass.+::func_prefix.+/,4);
+    // opts.SpyByFunctionAddy(0x2fd950, "ImportantFunc",10);
+    return opts;
+}
 const ShowNullField = false;
 const MaxDepth = 5;
+const WriteFuncNameBeforeTrace = true; //useful if it may crash to know what caused it
 var libapp = null;
 
-function onLibappLoaded() {
-    xxx("remove this line and correct the hook value");
-    const fn_addr = 0xdeadbeef;
-    Interceptor.attach(libapp.add(fn_addr), {
-        onEnter: function () {
-            init(this.context);
-            let objPtr = getArg(this.context, 0);
-            const [tptr, cls, values] = getTaggedObjectValue(objPtr);
-            console.log(`${cls.name}@${tptr.toString().slice(2)} =`, JSON.stringify(values, null, 2));
+class BlutterOpts {
+    
+    ignoreRegexes = [];
+    spyRegexes = [];
+    SpyFunctions = [];
+    spyCount = 0;
+    
+    //similar to SpyByClassFuncRegex except any regex matches here will explicitly not be spied on.  Good to be able to cast a wide net and then exclude things you don't care about or that cause crashes.
+    IgnoreByClassFuncRegex(regex){
+        this.ignoreRegexes.push(new SpyRegex(regex));
+    }
+    // Spys on a function by matching the provided js regex against the ida formatted class/function name that is in the format similar to: my_lib$bean$pathwith_bean_ClassINfoBean::get_someval_311eb0_check
+    SpyByClassFuncRegex(regex,maxDepth=MaxDepth){
+        this.spyRegexes.push(new SpyRegex(regex,maxDepth));
+    }
+    // takes an address in the form of 0x2fd950 for example, you can find a list of functions and their addresses in the generated ida_script/addNames.py file, you can optionally pass a display name to show when entered
+    SpyByFunctionAddy(address, name=""){
+        this.SpyFunctions.push(new SpyFunc(address,name));
+    }
+    SetSpys(){
+        if (this.spyRegexes.length > 0){
+            const FuncPtrToName = GetFuncPtrMap();
+            for( const [fnptr, fnname] of FuncPtrToName.entries()) {
+                let wasMatch=false;
+                let maxDepth=-1;
+                for (const spy of this.spyRegexes) {
+                    if (spy.regex.test(fnname)){
+                        wasMatch=true;
+                        if (spy.maxDepth > maxDepth)
+                            maxDepth = spy.maxDepth;
+                    }
+                }
+                if (wasMatch){
+                    for (const spy of this.ignoreRegexes)
+                        if (spy.regex.test(fnname))
+                            wasMatch=false;
+                }
+                if (wasMatch)
+                    this.SpyByFunctionAddy(fnptr,fnname,maxDepth);
+                
+            }
         }
-    });
+        for (const spy of this.SpyFunctions)
+            this._SetSpy(spy);
+    }
+    _SetSpy(spy){
+        const fullName = spy.name;
+        const maxDepth = spy.maxDepth;
+        Interceptor.attach(libapp.add(spy.address), {
+            onEnter: function () {
+                if (WriteFuncNameBeforeTrace && fullName)
+                    console.log(`${fullName}..`);
+                init(this.context);
+                let objPtr = getArg(this.context, 0);
+                const [tptr, cls, values] = getTaggedObjectValue(objPtr,maxDepth);
+                console.log(`${fullName} ${cls.name}@${tptr.toString().slice(2)} =`, JSON.stringify(values, null, 2));
+            }
+        });
+        console.log(`Blutter Intercept #${++this.spyCount}: ${fullName} (${spy.address})`);
+    }
+}
+class SpyRegex {
+    constructor(regex, maxDepth = MaxDepth){
+        this.maxDepth = maxDepth;
+        this.regex = regex;
+    }
+}
+class SpyFunc {
+    constructor(address,name="",maxDepth=MaxDepth){
+        this.address = address;
+        this.name = name;
+        this.maxDepth = maxDepth;
+    }
 }
 
+function onLibappLoaded() {
+    const opts = GetOptions();
+    opts.SetSpys();
+    
+}
 function tryLoadLibapp() {
     libapp = Module.findBaseAddress('libapp.so');
     if (libapp === null)
