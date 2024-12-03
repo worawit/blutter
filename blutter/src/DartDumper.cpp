@@ -32,6 +32,16 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 		return "_anon_closure";
 	}
 
+	if (fnName.starts_with("#")) {
+		fnName.replace(0, 1, "@");
+	}
+
+	for (size_t pos = 0; ; pos += 1) {
+		pos = fnName.find("|_", pos);
+		if (pos == std::string::npos) break;
+		fnName.replace(pos, 2, "_");
+	}
+
 	auto periodPos = fnName.find('.');
 	std::string prefix;
 	if (dartFn.IsStatic() && dartFn.Kind() == DartFunction::NORMAL && periodPos != std::string::npos) {
@@ -42,6 +52,18 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 			std::replace(prefix.begin(), prefix.end(), '#', '@');
 		}
 		fnName = fnName.substr(periodPos + 1);
+	}
+
+	// fnNames: #0#4internal, #0#1internal gives invalid name in IDA due to '#'
+	// lib file: https://github.com/worawit/blutter/issues/93#issuecomment-2283490634
+	for (size_t pos = 0; pos < fnName.size(); ++pos) {
+		if (fnName[pos] == '@' && pos + 1 < fnName.size() && fnName[pos + 1] == '#') {
+			fnName.replace(pos, 2, "_");
+		} else if (fnName[pos] == '0' && pos + 1 < fnName.size() && fnName[pos + 1] == '#') {
+			fnName.replace(pos, 2, "0");
+		} else if (fnName[pos] == '#') {
+			fnName[pos] = '_';
+		}
 	}
 
 	if (OP_MAP.contains(fnName)) {
@@ -121,6 +143,7 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 	}
 
 
+#ifndef IDA_FCN
 	// Note: create struct with a lot of member by ida script is very slow
 	//   use header file then adding comment is much faster
 	auto comments = DumpStructHeaderFile((outDir / "ida_dart_struct.h").string());
@@ -140,6 +163,20 @@ def create_Dart_structs():
 	for (const auto& [offset, comment] : comments) {
 		of << "\tida_struct.set_member_cmt(ida_struct.get_member(struc, " << offset << "), '''" << comment << "''', True)\n";
 	}
+#else
+	auto comments = DumpStructHeaderFile((outDir / "ida_dart_struct.h").string());
+	of << R"CBLOCK(
+import os
+def create_Dart_structs():
+	sid1 = idc.get_struc_id("DartThread")
+	if sid1 != idc.BADADDR:
+		return sid1, idc.get_struc_id("DartObjectPool")
+	hdr_file = os.path.join(os.path.dirname(__file__), 'ida_dart_struct.h')
+	idaapi.idc_parse_types(hdr_file, idc.PT_FILE)
+	sid1 = idc.import_type(-1, "DartThread")
+	sid2 = idc.import_type(-1, "DartObjectPool")
+)CBLOCK";
+#endif
 	of << "\treturn sid1, sid2\n";
 	of << "thrs, pps = create_Dart_structs()\n";
 
