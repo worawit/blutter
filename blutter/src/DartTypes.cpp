@@ -238,8 +238,7 @@ DartTypeParameter* DartTypeDb::FindOrAdd(dart::TypeParameterPtr typeParamPtr)
 	// in Dart 3.5, owner.ptr() might be NULL (zero value)
 	// code in TypeParameter::bound() is changed between Dart version, do NOT copy it to here
 	//   only add the edge case here
-	const auto owner_ptr = typeParamPtr.untag()->owner();
-	if ((intptr_t)owner_ptr == 0)
+	if ((intptr_t)typeParamPtr.untag()->owner() == 0 || (intptr_t)typeParam.parameterized_class() == 0)
 		dartTypeParam->bound = FindOrAdd(dart::Isolate::Current()->group()->object_store()->nullable_object_type());
 	else
 		dartTypeParam->bound = FindOrAdd(typeParam.bound());
