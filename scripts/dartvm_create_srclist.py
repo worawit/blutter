@@ -70,7 +70,7 @@ for name in extra_files:
 hdrs.append(os.path.join(BASEDIR, 'vm/version.h'))
 
 # other libraries
-for lib in ('async', 'core', 'developer', 'ffi', 'isolate', 'math', 'typed_data', 'vmservice', 'internal'):
+for lib in ('async', 'concurrent', 'core', 'developer', 'ffi', 'isolate', 'math', 'typed_data', 'vmservice', 'internal'):
     gni_file = os.path.join(BASEDIR, 'lib', lib+'_sources.gni')
     if os.path.isfile(gni_file):
         srcs = get_default_src_files(gni_file)

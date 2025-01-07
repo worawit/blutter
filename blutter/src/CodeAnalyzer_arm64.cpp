@@ -80,7 +80,7 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 		case dart::kSmiCid:
 			return new VarInteger(dart::Smi::Cast(obj).Value(), dart::kSmiCid);
 		case dart::kMintCid:
-			return new VarInteger(dart::Mint::Cast(obj).AsInt64Value(), dart::kMintCid);
+			return new VarInteger(MintValue(dart::Mint::Cast(obj)), dart::kMintCid);
 		case dart::kDoubleCid:
 			return new VarDouble(dart::Double::Cast(obj).value());
 		case dart::kBoolCid:
@@ -2536,7 +2536,7 @@ std::unique_ptr<BranchIfSmiInstr> FunctionAnalyzer::processBranchIfSmiInstr(AsmI
 
 std::unique_ptr<LoadClassIdInstr> FunctionAnalyzer::processLoadClassIdInstr(AsmIterator& insn)
 {
-	if (insn.id() == ARM64_INS_LDUR && insn.ops(1).mem.disp == -1 && dart::UntaggedObject::kClassIdTagPos == 12) {
+	if (insn.id() == ARM64_INS_LDUR && insn.ops(1).mem.disp == -1 && kUntaggedObjectClassIdTagPos == 12) {
 		// 0x21cb10: ldur  x1, [x0, #-1]  ; load object tag
 		const auto objReg = A64::Register{ insn.ops(1).mem.base };
 		const auto cidReg = insn.ops(0).reg;
@@ -2548,13 +2548,13 @@ std::unique_ptr<LoadClassIdInstr> FunctionAnalyzer::processLoadClassIdInstr(AsmI
 		INSN_ASSERT(insn.id() == ARM64_INS_UBFX);
 		INSN_ASSERT(insn.ops(0).reg == cidReg);
 		INSN_ASSERT(insn.ops(1).reg == cidReg);
-		INSN_ASSERT(insn.ops(2).imm == dart::UntaggedObject::kClassIdTagPos);
+		INSN_ASSERT(insn.ops(2).imm == kUntaggedObjectClassIdTagPos);
 		INSN_ASSERT(insn.ops(3).imm == dart::UntaggedObject::kClassIdTagSize);
 		++insn;
 
 		return std::make_unique<LoadClassIdInstr>(insn.Wrap(ins0_addr), objReg, A64::Register{cidReg});
 	}
-	else if (insn.id() == ARM64_INS_LDURH && insn.ops(1).mem.disp == 1 && dart::UntaggedObject::kClassIdTagPos == 16) {
+	else if (insn.id() == ARM64_INS_LDURH && insn.ops(1).mem.disp == 1 && kUntaggedObjectClassIdTagPos == 16) {
 		// https://github.com/dart-lang/sdk/commit/9182d5e5359988703a2b8a88c238f47a5295e18c
 		// 0x5f3900: ldurh  w3, [x0, #1]
 		const auto objReg = A64::Register{ insn.ops(1).mem.base };
@@ -2961,7 +2961,7 @@ std::unique_ptr<AllocateObjectInstr> FunctionAnalyzer::processTryAllocateObject(
 		INSN_ASSERT(insn.ops(1).mem.base == inst_reg && insn.ops(1).mem.disp == -1); // because of kHeapObjectTag
 		++insn;
 
-		const uint32_t cid = (tag >> dart::UntaggedObject::kClassIdTagPos) & ((1 << dart::UntaggedObject::kClassIdTagSize) - 1);
+		const uint32_t cid = (tag >> kUntaggedObjectClassIdTagPos) & ((1 << dart::UntaggedObject::kClassIdTagSize) - 1);
 		auto dartCls = app.GetClass(cid);
 		//INSN_ASSERT(dartCls->Size() < 0 || dartCls->Size() == inst_size);
 

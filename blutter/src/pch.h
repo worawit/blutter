@@ -93,4 +93,23 @@ namespace dart {
 #  define InitLateFinalStaticFieldStub InitStaticFieldStub
 #endif
 
+// https://github.com/dart-lang/sdk/commit/84fd647969f0d74ab63f0994d95b5fc26cac006a
+// refactor access to integer value to be same name "Value()". Basically, only dart::Mint is changed.
+// in dart 3.6, there are many internal changes (below). just use only one macro below for simplicity.
+//   all of them are commited separately in dev only. so, it does not work only some dev version.
+// - Improve BitField API. UntaggedObject use BitField. kXXXPos and kXXXSize are changed to XXX.
+//   Use XXX::shift() and XXX::bitsize() for Pos and Size respectively
+// https://github.com/dart-lang/sdk/commit/d3c165d7b52e48672224d0e46d2c74696fd89322
+// - Record::GetRecordType() with one argument
+// https://github.com/dart-lang/sdk/commit/ab19361e87a0248ade1e883f638542163f9100d1
+#ifdef UNIFORM_INTEGER_ACCESS
+#  define MintValue(obj) obj.Value()
+	constexpr intptr_t kUntaggedObjectClassIdTagPos = dart::UntaggedObject::ClassIdTag::shift();
+#  define DartGetRecordType(record) record.GetRecordType(dart::TypeVisibility::kUserVisibleType)
+#else
+#  define MintValue(obj) obj.value()
+	constexpr intptr_t kUntaggedObjectClassIdTagPos = dart::UntaggedObject::kClassIdTagPos;
+#  define DartGetRecordType(record) record.GetRecordType()
+#endif
+
 #endif //PCH_H
