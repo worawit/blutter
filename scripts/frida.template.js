@@ -139,7 +139,12 @@ function getObjectValue(ptr, cls, depthLeft = MaxDepth) {
         return getDartTypedArrayValues(ptr, cls, 8, (p) => p.readU64());
     case CidInt64Array:
         return getDartTypedArrayValues(ptr, cls, 8, (p) => p.readS64());
-    }
+    // _TwoByteString
+    case 94: {
+        const { lenOffset = 8, dataOffset = 16 } = cls
+        const len = ptr.add(lenOffset).readU32() >> 1;
+        return ptr.add(dataOffset).readUtf16String(len); 
+    }}
 
     if (cls.id < NumPredefinedCids) {
         const msg = `Unhandle class id: ${cls.id}, ${cls.name}`;
