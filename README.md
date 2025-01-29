@@ -51,7 +51,7 @@ docker build -t blutter .
 Then you can run it as follows:
 
 ```sh
-docker run -v /path/to/app/lib/arm64-v8a:/arm64-v8a -v /path/to/outdir:/app/outdir blutter /arm64-v8a /outdir
+docker run -v /path/to/app/lib/arm64-v8a:/arm64-v8a -v /path/to/outdir:/app/outdir -t blutter:latest python3 blutter.py /arm64-v8a /outdir
 ```
 Where the first volume is the path to the lib directory of the apk and the second volume is the path to the output directory.
 
