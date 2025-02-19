@@ -7,9 +7,13 @@
 #include <iostream>
 #include <sstream>
 #include <numeric>
+#include <algorithm>
+#include <cctype>
 #include "Disassembler.h"
 #include "DartThreadInfo.h"
 #include "CodeAnalyzer.h"
+
+#include <nlohmann/json.hpp>
 
 // TODO: move arm64 specific code to *_arm64 file
 
@@ -80,6 +84,210 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 	}
 
 	return prefix + fnName;
+}
+
+void DartDumper::Class2Json(const char* filename)
+{
+    nlohmann::ordered_json libs_json = nlohmann::ordered_json::array();
+
+	for (auto lib : app.libs) {
+		std::string lib_prefix = lib->GetName();
+		nlohmann::ordered_json lib_json;
+
+		lib_json["lib_name"] = lib_prefix;
+		nlohmann::ordered_json classes_json = nlohmann::ordered_json::array();
+
+		for (auto cls : lib->classes) {
+			std::string cls_prefix = cls->Name();
+			nlohmann::ordered_json cls_json;
+			cls_json["name"] = cls_prefix;
+			nlohmann::ordered_json functions_json = nlohmann::ordered_json::array();
+
+			for (auto dartFn : cls->Functions()) {
+				const auto ep = dartFn->Address();
+				auto name = dartFn->Name();
+				auto address = dartFn->Address();
+				auto size = dartFn->Size();
+
+				nlohmann::ordered_json fn_json;
+
+				nlohmann::ordered_json fn_json_morphic;
+
+				fn_json["name"] = std::format("{}_{:x}", name, address);
+				fn_json["address"] = address;
+				fn_json["size"] = size;
+				fn_json["payload_address"] = nullptr;
+				fn_json["morphic_address"] = nullptr;
+				if (dartFn->HasMorphicCode())
+				{
+					fn_json["payload_address"] = dartFn->PayloadAddress();
+					fn_json["morphic_address"] = dartFn->MonomorphicAddress();
+				}
+
+				functions_json.push_back(fn_json);
+			}
+			cls_json["functions"] = functions_json;
+			classes_json.push_back(cls_json);
+		}
+		lib_json["classes"] = classes_json;
+		libs_json.push_back(lib_json);
+	}
+
+	std::ofstream ofs(filename);
+	ofs << libs_json.dump(4);
+}
+
+void DartDumper::Stubs2Json(const char* filename)
+{
+
+	nlohmann::ordered_json stubs_json = nlohmann::ordered_json::array();
+
+	for (auto& item : app.stubs) {
+		auto stub = item.second;
+		const auto ep = stub->Address();
+		auto name = stub->FullName();
+
+		auto size = stub->Size();
+
+		nlohmann::ordered_json stub_json;
+		stub_json["name"] = std::format("{}_{:x}", name, ep);
+		stub_json["address"] = ep;
+		stub_json["size"] = size;
+		stubs_json.push_back(stub_json);
+	}
+	std::ofstream ofs(filename);
+	ofs << stubs_json.dump(4);
+}
+
+std::string DartDumper::GetDartRegisterString(arm64_reg reg) {
+    std::string regString;
+    switch (reg) {
+        case CSREG_DART_SP:
+            regString = "SP";
+            break;
+        case CSREG_DART_FP:
+            regString = "FP";
+            break;
+        case CSREG_DART_LR:
+            regString = "LR";
+            break;
+        case CSREG_DART_DISPATCH_TABLE:
+            regString = "DISPATCH_TABLE";
+            break;
+        case CSREG_DART_NULL:
+            regString = "NULL";
+            break;
+        case CSREG_DART_WB_OBJECT:
+            regString = "WB_OBJECT";
+            break;
+        case CSREG_DART_WB_VALUE:
+            regString = "WB_VALUE";
+            break;
+        case CSREG_DART_WB_SLOT:
+            regString = "WB_SLOT";
+            break;
+        case CSREG_DART_THR:
+            regString = "THR";
+            break;
+        case CSREG_DART_PP:
+            regString = "PP";
+            break;
+        case CSREG_DART_HEAP:
+            regString = "HEAP";
+            break;
+        case CSREG_DART_TMP:
+            regString = "TMP";
+            break;
+        case CSREG_DART_TMP2:
+            regString = "TMP2";
+            break;
+        default:
+            regString = "invalid";
+            break;
+    }
+
+    // Convert regString to lowercase
+    std::transform(regString.begin(), regString.end(), regString.begin(), ::tolower);
+
+    return regString;
+}
+
+
+void DartDumper::Disassembly2Json(const char* filename)
+{
+	nlohmann::ordered_json dissasembly_json = nlohmann::ordered_json::array();
+
+	Disassembler disasmer;
+
+
+	for (auto lib : app.libs) {
+		std::string lib_prefix = lib->GetName();
+		nlohmann::ordered_json libs_json;
+
+		libs_json["lib_name"] = lib_prefix;
+		nlohmann::ordered_json classes_json = nlohmann::ordered_json::array();
+
+		for (auto cls : lib->classes) {
+			std::string cls_prefix = cls->Name();
+			nlohmann::ordered_json cls_json;
+			cls_json["name"] = cls_prefix;
+			nlohmann::ordered_json functions_json = nlohmann::ordered_json::array();
+
+			for (auto dartFn : cls->Functions()) {
+				if (dartFn->PayloadSize() == 0)
+					continue;
+				auto name = dartFn->Name();
+
+				nlohmann::ordered_json fn_json;
+
+				nlohmann::ordered_json instructions_json = nlohmann::ordered_json::array();
+
+				auto insns = disasmer.Disasm((uint8_t*)dartFn->PayloadAddress() + app.base(), dartFn->PayloadSize(), dartFn->Address());
+
+				for (uint32_t i = 0; i < insns.Count(); i++) {
+					auto insn = insns.At(i);
+					const auto op_count = insn.op_count();
+					for (uint8_t j = 0; j < op_count; j++) {
+						auto reg = ARM64_REG_INVALID;
+						if (insn.ops[j].type == ARM64_OP_REG)
+							reg = insn.ops[j].reg;
+						else if (insn.ops[j].type == ARM64_OP_MEM)
+							reg = insn.ops[j].mem.base;
+
+						nlohmann::ordered_json instruction_json;
+						instruction_json["address"] = insn.address();
+						instruction_json["operandIndex"] = static_cast<int>(j);
+						instruction_json["reg"] = GetDartRegisterString(reg);
+
+						instructions_json.push_back(instruction_json);
+					}
+				}
+
+				fn_json["name"] = name;
+				fn_json["instructions"] = instructions_json;
+				functions_json.push_back(fn_json);
+			}
+
+			cls_json["functions"] = functions_json;
+			classes_json.push_back(cls_json);
+		}
+
+			libs_json["classes"] = classes_json;
+			dissasembly_json.push_back(libs_json);
+	}
+
+	std::ofstream ofs(filename);
+	ofs << dissasembly_json.dump(4);
+
+}
+
+void DartDumper::Dump2Json(std::filesystem::path outDir)
+{
+	std::filesystem::create_directory(outDir);
+
+	Class2Json((outDir / "classes.json").string().c_str());
+	Stubs2Json((outDir / "stubs.json").string().c_str());
+	Disassembly2Json((outDir / "disassembly.json").string().c_str());
 }
 
 void DartDumper::Dump4Ida(std::filesystem::path outDir)

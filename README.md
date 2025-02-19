@@ -20,7 +20,7 @@ Using ported gcc to old Debian/Ubuntu version does not work.
 - Install build tools and depenencies
 ```
 apt install python3-pyelftools python3-requests git cmake ninja-build \
-    build-essential pkg-config libicu-dev libcapstone-dev
+    build-essential pkg-config libicu-dev libcapstone-dev nlohmann-json3-dev
 ```
 
 ### Windows
@@ -60,6 +60,7 @@ python3 blutter.py path/to/app/lib/arm64-v8a out_dir --rebuild
 - **blutter_frida.js** the frida script template for the target application
 - **objs.txt** complete (nested) dump of Object from Object Pool
 - **pp.txt** all Dart objects in Object Pool
+- **data.json** json containing classes names with their respective methods and offsets, stubs.
 
 
 ## Directories
