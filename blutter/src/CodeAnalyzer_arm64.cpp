@@ -101,6 +101,7 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 			ASSERT(dartField);
 			return new VarField(*dartField);
 		}
+		case dart::kArrayCid:
 		case dart::kImmutableArrayCid:
 			return new VarArray(dart::Array::Cast(obj).ptr());
 		// should function and closure be their var types?
