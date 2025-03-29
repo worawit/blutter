@@ -1191,8 +1191,8 @@ void FunctionAnalyzer::handleOptionalNamedParameters(AsmIterator& insn, arm64_re
 				++insn;
 			}
 
-			// weird case. add 1 to currParamPosSmiReg. maybe this named parameter is not used and skip it.
-			if (insn.id() == ARM64_INS_ADD) {
+			// weird case. add 1 to currParamPosSmiReg. maybe this named parameter is not used and skip it (might be more than once).
+			while (insn.id() == ARM64_INS_ADD) {
 				INSN_ASSERT(fnInfo->State()->GetValue(insn.ops(1).reg) == &valNameCurrParamPosSmi);
 				INSN_ASSERT(insn.ops(2).imm == 2); // tagged value of 1
 				fnInfo->State()->MoveRegister(insn.ops(0).reg, insn.ops(1).reg);
