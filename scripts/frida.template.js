@@ -59,6 +59,11 @@ function getDartString(ptr, cls) {
     return ptr.add(cls.dataOffset).readUtf8String(len);
 }
 
+function getDartTwoByteString(ptr, cls) {
+    const len = ptr.add(cls.lenOffset).readU32() >> 1; // Dart store string length as Smi
+    return ptr.add(cls.dataOffset).readUtf16String(len);
+}
+
 function getDartArray(ptr, cls, depthLeft, glen = null) {
     // TODO: type arguments
     // Dart store array length as Smi
@@ -68,7 +73,7 @@ function getDartArray(ptr, cls, depthLeft, glen = null) {
     for (let i = 0; i < len; i++) {
         let dptr = dataPtr.add(i * CompressedWordSize).readPointer();
         const [tptr, ocls, fieldValue] = getTaggedObjectValue(dptr, depthLeft - 1);
-        if ([CidNull, CidSmi, CidMint, CidDouble, CidBool, CidString].includes(ocls.id)) {
+        if ([CidNull, CidSmi, CidMint, CidDouble, CidBool, CidString, CidTwoByteString].includes(ocls.id)) {
             vals.push(fieldValue);
         }
         else {
@@ -115,6 +120,8 @@ function getObjectValue(ptr, cls, depthLeft = MaxDepth) {
         return getDartBool(ptr, cls);
     case CidString:
         return getDartString(ptr, cls);
+    case CidTwoByteString:
+        return getDartTwoByteString(ptr, cls);
     case CidMint:
         return getDartMint(ptr, cls);
     case CidDouble:

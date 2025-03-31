@@ -25,6 +25,7 @@ void FridaWriter::Create(const char* filename)
 	of << "const CidDouble = " << dart::kDoubleCid << ";\n";
 	of << "const CidBool = " << dart::kBoolCid << ";\n";
 	of << "const CidString = " << dart::kOneByteStringCid << ";\n";
+	of << "const CidTwoByteString = " << dart::kTwoByteStringCid << ";\n";
 	of << "const CidArray = " << dart::kArrayCid << ";\n";
 	of << "const CidGrowableArray = " << dart::kGrowableObjectArrayCid << ";\n";
 	of << "const CidSet = " << dart::kSetCid << ";\n";
@@ -72,6 +73,12 @@ void FridaWriter::Create(const char* filename)
 				of << "name:\"String\",";
 				of << "lenOffset:" << AOT_String_length_offset << ",";
 				of << "dataOffset:" << AOT_OneByteString_data_offset << "},\n";
+				break;
+			case dart::kTwoByteStringCid:
+				of << "{id:" << dartCls->Id() << ",";
+				of << "name:\"TwoByteString\",";
+				of << "lenOffset:" << AOT_String_length_offset << ",";
+				of << "dataOffset:" << AOT_TwoByteString_data_offset << "},\n";
 				break;
 			case dart::kArrayCid:
 				of << "{id:" << dartCls->Id() << ",";
