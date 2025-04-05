@@ -40,6 +40,23 @@ brew install llvm@16 cmake ninja pkg-config icu4c capstone
 pip3 install pyelftools requests
 ```
 
+### Docker
+
+You can also run Blutter from docker. First build the docker image.
+
+```sh
+docker build -t blutter .
+```
+
+Then you can run it as follows:
+
+```sh
+docker run -v /path/to/app/lib/arm64-v8a:/arm64-v8a -v /path/to/outdir:/app/outdir -t blutter:latest python3 blutter.py /arm64-v8a /outdir
+```
+Where the first volume is the path to the lib directory of the apk and the second volume is the path to the output directory.
+
+This volume mounts the lib directory of the apk to the `/arm64-v8a` directory in the container and the output directory to the `/app/outdir` directory in the container.
+
 ## Usage
 Extract "lib" directory from apk file
 ```
