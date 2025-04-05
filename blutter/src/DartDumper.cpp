@@ -512,7 +512,9 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		}
 		return std::format("Code: {} ({:#x})", code.ToCString(), ep);
 	}
+	case dart::kArrayCid:
 	case dart::kImmutableArrayCid: {
+		// Note: since Dart 3.7, Ojbect Pool is mutable. so, Array is used too
 		// Objects in Object Pool immutable, so only immutable array is used for array
 		// Most of no type arguments in Object Pool are Argument Descriptor
 		const auto& arr = dart::Array::Cast(obj);

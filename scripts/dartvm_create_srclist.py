@@ -47,9 +47,7 @@ else:
 
 cc_srcs = []
 hdrs = []
-for path in ('vm', 'platform', 'vm/heap', 'vm/ffi'):
-    if path[-1] == '/':
-        path = path[:-1]
+for path in ('vm', 'platform', 'vm/heap', 'vm/ffi', 'vm/regexp'):
     path = os.path.join(BASEDIR, path)
     if not os.path.isdir(path):
         continue

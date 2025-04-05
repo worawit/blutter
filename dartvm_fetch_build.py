@@ -32,7 +32,7 @@ def load_source(modname, filename):
 """
 
 class DartLibInfo:
-    def __init__(self, version: str, os_name: str, arch: str, has_compressed_ptrs: bool | None = None, snapshot_hash: str | None = None):
+    def __init__(self, version: str, os_name: str, arch: str, has_compressed_ptrs = None, snapshot_hash = None):
         self.version = version
         self.os_name = os_name
         self.arch = arch
