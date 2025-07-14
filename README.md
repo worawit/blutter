@@ -39,6 +39,12 @@ python scripts\init_env_win.py
 brew install llvm@16 cmake ninja pkg-config icu4c capstone
 pip3 install pyelftools requests
 ```
+### Docker
+- Install Docker
+- Build Docker image from Dockerfile
+```
+sudo docker build -t blutter .
+```
 
 ## Usage
 Extract "lib" directory from apk file
@@ -48,6 +54,16 @@ python3 blutter.py path/to/app/lib/arm64-v8a out_dir
 The blutter.py will automatically detect the Dart version from the flutter engine and call executable of blutter to get the information from libapp.so.
 
 If the blutter executable for required Dart version does not exists, the script will automatically checkout Dart source code and compiling it.
+
+### Docker
+`cd` inside `lib` directory
+
+Run (`sudo` required to share and write to volumes)
+```
+sudo docker run -it -v "$(pwd):/app" blutter
+```
+The output will be in `lib/blutter_output` directory.
+
 
 ## Update
 You can use ```git pull``` to update and run blutter.py with ```--rebuild``` option to force rebuild the executable
