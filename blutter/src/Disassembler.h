@@ -1,5 +1,5 @@
 #pragma once
-#include <capstone.h>
+#include <capstone/capstone.h>
 #include <utility>
 #ifdef TARGET_ARCH_ARM64
 #include "Disassembler_arm64.h"
