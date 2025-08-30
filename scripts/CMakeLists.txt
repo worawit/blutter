@@ -96,6 +96,7 @@ else()
 	set(cc_opts
 		-O3 -fno-ident -fdata-sections -ffunction-sections
 		-fno-omit-frame-pointer -fno-rtti -fno-exceptions
+		-fno-sanitize=thread
 		#-Wall
 	)
 endif()

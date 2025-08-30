@@ -32,6 +32,14 @@ python scripts\init_env_win.py
 ```
 - Start "x64 Native Tools Command Prompt"
 
+### macOS Sequoia
+- Install XCode
+- Install required tools
+```
+brew install cmake ninja pkg-config icu4c capstone
+pip3 install pyelftools requests
+```
+
 ### macOS Ventura and Sonoma (clang 16)
 - Install XCode
 - Install clang 16 and required tools

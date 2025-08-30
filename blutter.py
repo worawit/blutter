@@ -142,9 +142,11 @@ def cmake_blutter(input: BlutterInput):
     macros = find_compat_macro(input.dart_info.version, input.no_analysis)
     my_env = None
     if platform.system() == 'Darwin':
-        llvm_path = subprocess.run(['brew', '--prefix', 'llvm@16'], capture_output=True, check=True).stdout.decode().strip()
-        clang_file = os.path.join(llvm_path, 'bin', 'clang')
-        my_env = {**os.environ, 'CC': clang_file, 'CXX': clang_file+'++'}
+        mac_ver = int(platform.mac_ver()[0].split('.', 1)[0])
+        if mac_ver < 15:
+            llvm_path = subprocess.run(['brew', '--prefix', 'llvm@16'], capture_output=True, check=True).stdout.decode().strip()
+            clang_file = os.path.join(llvm_path, 'bin', 'clang')
+            my_env = {**os.environ, 'CC': clang_file, 'CXX': clang_file+'++'}
     # cmake -GNinja -Bbuild -DCMAKE_BUILD_TYPE=Release
     subprocess.run([CMAKE_CMD, '-GNinja', '-B', builddir, f'-DDARTLIB={input.dart_info.lib_name}', f'-DNAME_SUFFIX={input.name_suffix}', '-DCMAKE_BUILD_TYPE=Release', '--log-level=NOTICE'] + macros, cwd=blutter_dir, check=True, env=my_env)
 
