@@ -84,8 +84,10 @@ static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::st
 
 void DartDumper::Dump4Ida(std::filesystem::path outDir)
 {
-	std::filesystem::create_directory(outDir);
-	std::ofstream of((outDir / "addNames.py").string());
+	try {
+		std::cerr << "Starting Dump4Ida..." << std::endl;
+		std::filesystem::create_directory(outDir);
+		std::ofstream of((outDir / "addNames.py").string());
 	of << "import ida_funcs\n";
 	of << "import idaapi\n\n";
 
@@ -147,6 +149,10 @@ def create_Dart_structs():
 	applyStruct4Ida(of);
 
 	of << "print('Script finished!')\n";
+	} catch (const std::exception& e) {
+		std::cerr << "Exception in Dump4Ida: " << e.what() << std::endl;
+		throw;
+	}
 }
 
 std::vector<std::pair<intptr_t, std::string>> DartDumper::DumpStructHeaderFile(std::string outFile)
@@ -192,7 +198,11 @@ std::vector<std::pair<intptr_t, std::string>> DartDumper::DumpStructHeaderFile(s
 				if (unlinkTargetType == dart::ObjectPool::EntryType::kImmediate) {
 					const auto imm = pool.RawValueAt(i + 1);
 					auto dartFn = app.GetFunction(imm - app.base());
-					name = std::format("UnlinkedCall_{:#x}_{:#x}", offset, dartFn->Address(), offset);
+					if (dartFn != nullptr) {
+						name = std::format("UnlinkedCall_{:#x}_{:#x}", offset, dartFn->Address(), offset);
+					} else {
+						name = std::format("UnlinkedCall_{:#x}_unknown_{:#x}", offset, imm);
+					}
 				}
 				else {
 					ASSERT(unlinkTargetType == dart::ObjectPool::EntryType::kTaggedObject);
@@ -295,12 +305,15 @@ void DartDumper::DumpCode(const char* out_dir)
 		if (dartLib->isInternal)
 			continue;
 
-		auto out_file = dartLib->CreatePath(out_dir);
-		std::ofstream of(out_file);
-		dartLib->PrintCommentInfo(of);
+		try {
+			auto out_file = dartLib->CreatePath(out_dir);
+			std::ofstream of(out_file);
+			std::cerr << "Processing library: " << out_file << std::endl;
+			dartLib->PrintCommentInfo(of);
 
-		for (auto dartCls : dartLib->classes) {
-			dartCls->PrintHead(of);
+			for (auto dartCls : dartLib->classes) {
+				try {
+					dartCls->PrintHead(of);
 
 			if (!dartCls->Fields().empty())
 				of << "\n";
@@ -311,24 +324,47 @@ void DartDumper::DumpCode(const char* out_dir)
 			if (!dartCls->Functions().empty())
 				of << "\n";
 			for (auto dartFn : dartCls->Functions()) {
-				dartFn->PrintHead(of);
+				try {
+					dartFn->PrintHead(of);
 
 #ifndef NO_CODE_ANALYSIS
-				// use as app is loaded at zero
-				if (dartFn->Size() > 0) {
-					auto& asmTexts = dartFn->GetAnalyzedData()->asmTexts.Data();
-					auto& il_insns = dartFn->GetAnalyzedData()->il_insns;
-					auto il_itr = il_insns.begin();
-					AddrRange range;
-					ASSERT(!asmTexts.empty());
-					for (auto& asmText : asmTexts) {
+					// use as app is loaded at zero
+					if (dartFn->Size() > 0) {
+						auto* analyzedData = dartFn->GetAnalyzedData();
+						if (analyzedData == nullptr) {
+							of << "    // WARNING: Analysis data not available for this function\n";
+							dartFn->PrintFoot(of);
+							continue;
+						}
+						
+						try {
+							auto& asmTexts = analyzedData->asmTexts.Data();
+							if (asmTexts.empty()) {
+								of << "    // WARNING: No assembly data for this function\n";
+								dartFn->PrintFoot(of);
+								continue;
+							}
+							
+							auto& il_insns = analyzedData->il_insns;
+							auto il_itr = il_insns.begin();
+							AddrRange range;
+						
+						for (auto& asmText : asmTexts) {
 						std::string extra;
 						switch (asmText.dataType) {
 						case AsmText::ThreadOffset:
-							extra = "THR::" + GetThreadOffsetName(asmText.threadOffset);
+							try {
+								extra = "THR::" + GetThreadOffsetName(asmText.threadOffset);
+							} catch (...) {
+								extra = std::format("THR::{:#x}", asmText.threadOffset);
+							}
 							break;
 						case AsmText::PoolOffset:
-							extra = getPoolObjectDescription(asmText.poolOffset);
+							try {
+								extra = getPoolObjectDescription(asmText.poolOffset);
+							} catch (...) {
+								extra = std::format("[pp+{:#x}] <error>", asmText.poolOffset);
+							}
 							break;
 						case AsmText::Boolean:
 							extra = asmText.boolVal ? "true" : "false";
@@ -336,11 +372,17 @@ void DartDumper::DumpCode(const char* out_dir)
 						case AsmText::Call: {
 							auto* fn = app.GetFunction(asmText.callAddress);
 							if (fn) {
-								extra = fn->FullName();
-								auto retCid = fn->ReturnType();
-								if (retCid != dart::kIllegalCid) {
-									auto retCls = app.classes.at(retCid);
-									extra += std::format(" -> {} (size={:#x})", retCls->FullName(), retCls->Size());
+								try {
+									extra = fn->FullName();
+									auto retCid = fn->ReturnType();
+									if (retCid != dart::kIllegalCid && retCid < (intptr_t)app.classes.size()) {
+										auto retCls = app.classes.at(retCid);
+										if (retCls != nullptr) {
+											extra += std::format(" -> {} (size={:#x})", retCls->FullName(), retCls->Size());
+										}
+									}
+								} catch (...) {
+									extra = std::format("Function at {:#x}", asmText.callAddress);
 								}
 							}
 							break;
@@ -353,35 +395,60 @@ void DartDumper::DumpCode(const char* out_dir)
 							of << "    ";
 						}
 						else {
-							while ((*il_itr)->Start() < asmText.addr) {
-								if ((*il_itr)->Kind() != ILInstr::Unknown) {
-									of << std::format("{:#x}: {}\n", (*il_itr)->Start(), (*il_itr)->ToString());
+							while (il_itr != il_insns.end() && (*il_itr)->Start() < asmText.addr) {
+								try {
+									if ((*il_itr)->Kind() != ILInstr::Unknown) {
+										of << std::format("{:#x}: {}\n", (*il_itr)->Start(), (*il_itr)->ToString());
+										of << "    // ";
+									}
+								} catch (...) {
+									of << std::format("{:#x}: <error>\n", (*il_itr)->Start());
 									of << "    // ";
 								}
 								++il_itr;
 							}
-							if ((*il_itr)->Start() == asmText.addr) {
-								if ((*il_itr)->Kind() != ILInstr::Unknown) {
-									of << std::format("{:#x}: {}\n", asmText.addr, (*il_itr)->ToString());
+							if (il_itr != il_insns.end() && (*il_itr)->Start() == asmText.addr) {
+								try {
+									if ((*il_itr)->Kind() != ILInstr::Unknown) {
+										of << std::format("{:#x}: {}\n", asmText.addr, (*il_itr)->ToString());
+										of << "    //     ";
+										range = (*il_itr)->Range();
+									}
+								} catch (...) {
+									of << std::format("{:#x}: <error>\n", asmText.addr);
 									of << "    //     ";
-									range = (*il_itr)->Range();
 								}
 								++il_itr;
 							}
 						}
 
+						const char* asmTextStr = &asmText.text[0];
 						if (extra.empty())
-							of << std::format("{:#x}: {}\n", asmText.addr, &asmText.text[0]);
+							of << std::format("{:#x}: {}\n", asmText.addr, asmTextStr);
 						else
-							of << std::format("{:#x}: {}  ; {}\n", asmText.addr, &asmText.text[0], extra);
+							of << std::format("{:#x}: {}  ; {}\n", asmText.addr, asmTextStr, extra);
+					}
+					} catch (const std::exception& e) {
+						of << std::format("    // ERROR processing function: {}\n", e.what());
 					}
 				}
 #endif // NO_CODE_ANALYSIS
 
-				dartFn->PrintFoot(of);
+					dartFn->PrintFoot(of);
+				} catch (const std::exception& e) {
+					of << std::format("    // CRITICAL ERROR in function {:#x}: {}\n", 
+						dartFn ? dartFn->Address() : 0, e.what());
+				}
 			}
 
 			dartCls->PrintFoot(of);
+				} catch (const std::exception& e) {
+					std::cerr << "Error processing class: " << e.what() << std::endl;
+					of << "\n  // ERROR processing class: " << e.what() << "\n}\n";
+				}
+			}
+		} catch (const std::exception& e) {
+			std::cerr << "Error processing library: " << e.what() << std::endl;
 		}
 	}
 }
@@ -486,7 +553,11 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		return "SubtypeTestCache";
 	case dart::kFunctionCid: {
 		// stub never be in Object Pool
-		auto dartFn = app.GetFunction(dart::Function::Cast(obj).entry_point() - app.base())->AsFunction();
+		auto fnBase = app.GetFunction(dart::Function::Cast(obj).entry_point() - app.base());
+		if (!fnBase) {
+			return std::format("Function({:#x})", dart::Function::Cast(obj).entry_point() - app.base());
+		}
+		auto dartFn = fnBase->AsFunction();
 		if (dartFn->IsClosure()) {
 			auto parentFn = dartFn->GetOutermostFunction();
 			if (parentFn) {
@@ -793,16 +864,30 @@ std::string DartDumper::getPoolObjectDescription(intptr_t offset, bool simpleFor
 {
 	const auto& pool = app.GetObjectPool();
 	intptr_t idx = dart::ObjectPool::IndexFromOffset(offset);
+	intptr_t num = pool.Length();
+	
+	// Bounds check
+	if (idx < 0 || idx >= num) {
+		return std::format("[pp+{:#x}] ERROR: Index {} out of bounds (pool size: {})", offset, idx, num);
+	}
+	
 	auto objType = pool.TypeAt(idx);
 	// see how the EntryType is handled from vm/object_service.cc - ObjectPool::PrintJSONImpl()
 	if (objType == dart::ObjectPool::EntryType::kTaggedObject) {
 		auto& obj = dart::Object::Handle(pool.ObjectAt(idx));
 		if (obj.IsUnlinkedCall()) {
 			// since Dart 3.10, target type might be kTaggedObject
+			// Check bounds before accessing idx+1
+			if (idx + 1 >= num) {
+				return std::format("[pp+{:#x}] UnlinkedCall: ERROR - next entry out of bounds", offset);
+			}
 			auto unlinkTargetType = pool.TypeAt(idx + 1);
 			if (unlinkTargetType == dart::ObjectPool::EntryType::kImmediate) {
 				const auto imm = pool.RawValueAt(idx + 1);
 				auto dartFn = app.GetFunction(imm - app.base());
+				if (dartFn == nullptr) {
+					return std::format("[pp+{:#x}] UnlinkedCall: {:#x} - [function not found]", offset, imm);
+				}
 				return std::format("[pp+{:#x}] UnlinkedCall: {:#x} - {}", offset, dartFn->Address(), dartFn->FullName().c_str());
 			}
 			else {
@@ -846,18 +931,30 @@ void DartDumper::DumpObjectPool(const char* filename)
 	const auto& pool = app.GetObjectPool();
 	intptr_t num = pool.Length();
 
-	const auto& rawObj = pool.ptr()->untag();
+	auto poolPtr = pool.ptr();
+	if (poolPtr == nullptr) {
+		std::cerr << "Error: pool.ptr() returned nullptr\n";
+		of << "pool heap offset: ERROR - null pool pointer\n";
+		return;
+	}
+	
+	const auto& rawObj = poolPtr->untag();
 	const auto raw_addr = dart::UntaggedObject::ToAddr(rawObj);
 	of << std::format("pool heap offset: {:#x}\n", raw_addr - app.heap_base());
 
 	for (intptr_t i = 0; i < num; i++) {
-		// offset here is from ObjectPool pointer subtracted by kHeapObjectTag
-		// add 1 to make the offset value same as offset in compiled code
-		intptr_t offset = dart::ObjectPool::OffsetFromIndex(i);
-		auto txt = getPoolObjectDescription(offset + 1, false);
-		of << txt << "\n";
-		if (txt.compare(txt.find(']'), 15, "] UnlinkedCall:") == 0)
-			i++;
+		try {
+			// offset here is from ObjectPool pointer subtracted by kHeapObjectTag
+			// add 1 to make the offset value same as offset in compiled code
+			intptr_t offset = dart::ObjectPool::OffsetFromIndex(i);
+			auto txt = getPoolObjectDescription(offset + 1, false);
+			of << txt << "\n";
+			if (txt.compare(txt.find(']'), 15, "] UnlinkedCall:") == 0)
+				i++;
+		} catch (const std::exception& e) {
+			std::cerr << std::format("Error at pool index {}: {}\n", i, e.what());
+			throw;
+		}
 	}
 }
 
