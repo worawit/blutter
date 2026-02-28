@@ -35,6 +35,15 @@ int main(int argc, char** argv)
 		app.ExitScope();
 
 		app.EnterScope();
+
+		// Generate Frida script FIRST (only needs app.classes from LoadInfo)
+		std::cerr << "Generating Frida script...\n";
+		std::cerr.flush();
+		FridaWriter fwriter{ app };
+		fwriter.Create((outDir / "blutter_frida.js").string().c_str());
+		std::cerr << "Frida script generated successfully\n";
+		std::cerr.flush();
+
 #ifndef NO_CODE_ANALYSIS
 		std::cout << "Analyzing the application\n";
 		CodeAnalyzer analyzer{ app };
@@ -44,6 +53,7 @@ int main(int argc, char** argv)
 		DartDumper dumper{ app };
 		std::cout << "Dumping Object Pool\n";
 		dumper.DumpObjectPool((outDir / "pp.txt").string().c_str());
+
 		dumper.DumpObjects((outDir / "objs.txt").string().c_str());
 #ifndef NO_CODE_ANALYSIS
 		std::cout << "Generating application assemblies\n";
@@ -52,10 +62,6 @@ int main(int argc, char** argv)
 #endif
 		dumper.DumpCode((outDir / "asm").string().c_str());
 		dumper.Dump4Ida(outDir / "ida_script");
-
-		std::cout << "Generating Frida script\n";
-		FridaWriter fwriter{ app };
-		fwriter.Create((outDir / "blutter_frida.js").string().c_str());
 
 		app.ExitScope();
 	}
