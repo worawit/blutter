@@ -192,7 +192,12 @@ std::vector<std::pair<intptr_t, std::string>> DartDumper::DumpStructHeaderFile(s
 				if (unlinkTargetType == dart::ObjectPool::EntryType::kImmediate) {
 					const auto imm = pool.RawValueAt(i + 1);
 					auto dartFn = app.GetFunction(imm - app.base());
-					name = std::format("UnlinkedCall_{:#x}_{:#x}", offset, dartFn->Address(), offset);
+					if (dartFn) {
+						name = std::format("UnlinkedCall_{:#x}_{:#x}", offset, dartFn->Address());
+					}
+					else {
+						name = std::format("UnlinkedCall_{:#x}_{:#x}", offset, imm - app.base());
+					}
 				}
 				else {
 					ASSERT(unlinkTargetType == dart::ObjectPool::EntryType::kTaggedObject);
@@ -486,7 +491,11 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		return "SubtypeTestCache";
 	case dart::kFunctionCid: {
 		// stub never be in Object Pool
-		auto dartFn = app.GetFunction(dart::Function::Cast(obj).entry_point() - app.base())->AsFunction();
+		auto fnBase = app.GetFunction(dart::Function::Cast(obj).entry_point() - app.base());
+		if (!fnBase) {
+			return std::format("Function({:#x})", dart::Function::Cast(obj).entry_point() - app.base());
+		}
+		auto dartFn = fnBase->AsFunction();
 		if (dartFn->IsClosure()) {
 			auto parentFn = dartFn->GetOutermostFunction();
 			if (parentFn) {
@@ -803,7 +812,12 @@ std::string DartDumper::getPoolObjectDescription(intptr_t offset, bool simpleFor
 			if (unlinkTargetType == dart::ObjectPool::EntryType::kImmediate) {
 				const auto imm = pool.RawValueAt(idx + 1);
 				auto dartFn = app.GetFunction(imm - app.base());
-				return std::format("[pp+{:#x}] UnlinkedCall: {:#x} - {}", offset, dartFn->Address(), dartFn->FullName().c_str());
+				if (dartFn) {
+					return std::format("[pp+{:#x}] UnlinkedCall: {:#x} - {}", offset, dartFn->Address(), dartFn->FullName().c_str());
+				}
+				else {
+					return std::format("[pp+{:#x}] UnlinkedCall: {:#x} - [unknown]", offset, imm - app.base());
+				}
 			}
 			else {
 				ASSERT(unlinkTargetType == dart::ObjectPool::EntryType::kTaggedObject);
