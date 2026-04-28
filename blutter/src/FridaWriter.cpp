@@ -2,6 +2,7 @@
 #include "FridaWriter.h"
 #include <fstream>
 #include <filesystem>
+#include <sstream>
 #include "Util.h"
 
 #ifndef FRIDA_TEMPLATE_DIR
@@ -10,7 +11,32 @@
 
 void FridaWriter::Create(const char* filename)
 {
-	std::filesystem::copy_file(FRIDA_TEMPLATE_DIR "/frida.template.js", filename, std::filesystem::copy_options::overwrite_existing);
+	std::ifstream templateFile(FRIDA_TEMPLATE_DIR "/frida.template.js");
+	std::stringstream templateBuffer;
+	templateBuffer << templateFile.rdbuf();
+	auto code = templateBuffer.str();
+
+	const auto replace_once = [](std::string& text, const std::string& needle, const std::string& value) {
+		const auto pos = text.find(needle);
+		if (pos == std::string::npos)
+			throw std::runtime_error("Missing Frida template placeholder: " + needle);
+		text.replace(pos, needle.size(), value);
+	};
+
+#if defined(DART_TARGET_OS_MACOS_IOS)
+	replace_once(code, "%LIBAPP_MODULE_NAMES%", "'App', 'libapp.so'");
+#else
+	replace_once(code, "%LIBAPP_MODULE_NAMES%", "'libapp.so', 'App'");
+#endif
+#if defined(DART_COMPRESSED_POINTERS)
+	replace_once(code, "%POINTER_COMPRESSED_ENABLED%", "true");
+#else
+	replace_once(code, "%POINTER_COMPRESSED_ENABLED%", "false");
+#endif
+
+	std::ofstream templateOut(filename, std::ios_base::trunc);
+	templateOut << code;
+	templateOut.close();
 
 	std::ofstream of(filename, std::ios_base::app);
 

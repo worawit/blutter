@@ -60,7 +60,7 @@ if (${TARGET_OS} STREQUAL "android")
 	# Note: DART_COMPRESSED_POINTERS should be from the binary
 	#set(dart_pointers "DART_COMPRESSED_POINTERS")
 else()
-	set(target_os "DART_TARGET_OS_MACOS_IOS")
+	set(target_os "DART_TARGET_OS_MACOS" "DART_TARGET_OS_MACOS_IOS")
 endif()
 # TARGET_ARCH_ARM64 or TARGET_ARCH_X64
 if (${TARGET_ARCH} STREQUAL "arm64")

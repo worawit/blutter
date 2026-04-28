@@ -1,5 +1,6 @@
 const ShowNullField = false;
 const MaxDepth = 5;
+const LibappModuleNames = [%LIBAPP_MODULE_NAMES%];
 var libapp = null;
 
 function onLibappLoaded() {
@@ -16,16 +17,28 @@ function onLibappLoaded() {
 }
 
 function tryLoadLibapp() {
-    try {
-        libapp = Module.findBaseAddress('libapp.so');
-    } catch (e) {
-        if (e instanceof TypeError && e.message === "not a function") {
-            libapp = Process.findModuleByName('libapp.so');
-            if (libapp != null) {
-                libapp = libapp.base;
+    for (const name of LibappModuleNames) {
+        try {
+            libapp = Module.findBaseAddress(name);
+        } catch (e) {
+            if (e instanceof TypeError && e.message === "not a function") {
+                const mod = Process.findModuleByName(name);
+                if (mod != null) {
+                    libapp = mod.base;
+                }
+            } else {
+                throw e;
             }
-        } else {
-            throw e;
+        }
+        if (libapp !== null)
+            break;
+    }
+    if (libapp === null) {
+        for (const mod of Process.enumerateModules()) {
+            if (mod.path.endsWith('/App.framework/App')) {
+                libapp = mod.base;
+                break;
+            }
         }
     }
     if (libapp === null)
@@ -35,14 +48,11 @@ function tryLoadLibapp() {
 }
 tryLoadLibapp();
 
-const PointerCompressedEnabled = true;
-const CompressedWordSize = 4;
+const PointerCompressedEnabled = %POINTER_COMPRESSED_ENABLED%;
+const CompressedWordSize = PointerCompressedEnabled ? 4 : Process.pointerSize;
 const HeapAddressReg = 'x28';
 const NullReg = 'x22';
 const StackReg = 'x15';
-
-if (!PointerCompressedEnabled)
-    console.error("now support only compressed pointer");
 
 let HeapAddress = 0;
 // this function must be called at least on first interception of Dart function

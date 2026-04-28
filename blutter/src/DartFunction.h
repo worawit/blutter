@@ -25,11 +25,11 @@ struct DartFunctionSignature
 	std::vector<FnParam>& Params() { return params; }
 	FnParam& Param(int i) { return params[i]; }
 
-	DartAbstractType* returnType;
+	DartAbstractType* returnType{ nullptr };
 	//typeParams;
 	std::vector<FnParam> params;
-	int numOptionalParam;
-	bool hasNamedParam;
+	int numOptionalParam{ 0 };
+	bool hasNamedParam{ false };
 };
 
 class DartFunction : public DartFnBase
@@ -111,4 +111,3 @@ private:
 
 	friend class DartApp;
 };
-
