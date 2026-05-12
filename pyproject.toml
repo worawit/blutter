@@ -55,7 +55,6 @@ dev = [
     "mypy>=1.8",
     "pytest>=8.0",
     "pytest-cov>=5.0",
-    "pre-commit>=3.7",
     "types-requests>=2.31",
 ]
 # Python capstone binding used by scripts/extract_libflutter_functions.py

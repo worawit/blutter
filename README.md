@@ -48,6 +48,11 @@ brew install llvm@16 cmake ninja pkg-config icu4c capstone
 pip3 install pyelftools requests
 ```
 
+Alternatively, install the Python dependencies via pip using the included `pyproject.toml`:
+```
+pip install .
+```
+
 ## Usage
 Extract "lib" directory from apk file
 ```
@@ -56,49 +61,6 @@ python3 blutter.py path/to/app/lib/arm64-v8a out_dir
 The blutter.py will automatically detect the Dart version from the flutter engine and call executable of blutter to get the information from libapp.so.
 
 If the blutter executable for required Dart version does not exists, the script will automatically checkout Dart source code and compiling it.
-
-## Development Setup
-To contribute to Blutter's Python components, set up the development environment:
-
-### Install Development Dependencies
-```
-pip install -e .[dev]
-```
-
-### Enable Pre-commit Hooks
-Automatically run linting and type checking before commits:
-```
-pre-commit install
-```
-
-### Code Quality Tools
-Run these commands during development:
-
-**Linter (ruff)** - Check code style and errors:
-```
-ruff check .
-```
-
-**Formatter (ruff)** - Auto-format code:
-```
-ruff format .
-```
-
-**Type Checker (mypy)** - Verify type annotations:
-```
-mypy .
-```
-
-**Tests (pytest)** - Run test suite:
-```
-pytest
-```
-
-### Documentation Synchronization
-After modifying the API or code structure, keep documentation in sync using the Claude Code skill:
-```
-ecc:update-docs
-```
 
 ## Update
 You can use ```git pull``` to update and run blutter.py with ```--rebuild``` option to force rebuild the executable
