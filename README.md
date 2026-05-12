@@ -48,7 +48,8 @@ brew install llvm@16 cmake ninja pkg-config icu4c capstone
 pip3 install pyelftools requests
 ```
 
-Alternatively, install the Python dependencies via pip using the included `pyproject.toml`:
+### Python dependencies (all platforms)
+As an alternative to the per-platform `pip3 install` commands above, you can install the Python dependencies from the included `pyproject.toml`:
 ```
 pip install .
 ```
