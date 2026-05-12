@@ -8,7 +8,7 @@ import zlib
 from struct import unpack
 
 from elftools.elf.elffile import ELFFile
-from elftools.elf.enums import ENUM_E_MACHINE 
+from elftools.elf.enums import ENUM_E_MACHINE
 from elftools.elf.sections import SymbolTableSection
 
 # TODO: support both ELF and Mach-O file

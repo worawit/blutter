@@ -1,0 +1,3 @@
+# Install the package in editable mode with all dev dependencies.
+# This keeps SCRIPT_DIR resolution correct for the build helpers in scripts/.
+-e .[dev]

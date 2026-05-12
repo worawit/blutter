@@ -230,7 +230,7 @@ def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no
         main2(libapp_file, libflutter_file, outdir, rebuild_blutter, create_vs_sln, no_analysis)
 
 
-if __name__ == "__main__":
+def cli() -> None:
     parser = argparse.ArgumentParser(
         prog='B(l)utter',
         description='Reversing a flutter application tool')
@@ -248,3 +248,7 @@ if __name__ == "__main__":
         main(args.indir, args.outdir, args.rebuild, args.vs_sln, args.no_analysis)
     else:
         main_no_flutter(args.indir, args.dart_version, args.outdir, args.rebuild, args.vs_sln, args.no_analysis)
+
+
+if __name__ == "__main__":
+    cli()

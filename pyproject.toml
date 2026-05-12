@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ---------------------------------------------------------------------------
+# Project metadata (PEP 621)
+# ---------------------------------------------------------------------------
+[project]
+name = "blutter"
+version = "0.1.0"
+description = "Flutter Mobile Application Reverse Engineering Tool by Compiling Dart AOT Runtime"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Worawit Wangwarunyoo" }]
+keywords = [
+    "flutter",
+    "dart",
+    "reverse-engineering",
+    "android",
+    "arm64",
+    "frida",
+    "aot",
+    "apk",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Disassemblers",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "pyelftools>=0.29",
+    "requests>=2.28",
+    # capstone is the native C library used by the C++ build; the Python binding
+    # is only needed by scripts/extract_libflutter_functions.py (see [scripts] extra).
+]
+
+[project.optional-dependencies]
+# Full developer toolchain
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.8",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pre-commit>=3.7",
+    "types-requests>=2.31",
+]
+# Python capstone binding used by scripts/extract_libflutter_functions.py
+# (capstone 4 ships pre-built wheels on all platforms; capstone 5 may require
+# compilation on Windows — install manually if needed)
+scripts = ["capstone>=4.0"]
+
+[project.scripts]
+# Entry point wraps the argparse CLI; `python blutter.py` also still works.
+blutter = "blutter:cli"
+
+[project.urls]
+Homepage = "https://github.com/worawit/blutter"
+Repository = "https://github.com/worawit/blutter"
+"Bug Tracker" = "https://github.com/worawit/blutter/issues"
+
+# ---------------------------------------------------------------------------
+# Setuptools — install the three root-level modules.
+# NOTE: blutter.py uses SCRIPT_DIR to locate scripts/; always install with
+#       `pip install -e .` (editable) so __file__ points to the source tree.
+# ---------------------------------------------------------------------------
+[tool.setuptools]
+py-modules = ["blutter", "dartvm_fetch_build", "extract_dart_info"]
+
+# ---------------------------------------------------------------------------
+# Ruff — linting + formatting
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py38"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP"]
+ignore = [
+    "E501",  # line-too-long — enforced by formatter, not linter
+    "F403",  # star imports used in scripts (e.g. `from capstone import *`)
+    "F405",  # may-be-undefined from star import
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E402", "F401", "T201"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+
+# ---------------------------------------------------------------------------
+# Mypy — static type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.8"
+ignore_missing_imports = true   # capstone / pyelftools have no bundled stubs
+warn_unused_ignores = true
+strict_optional = true
+exclude = ["build/", "dartsdk/", "packages/", "external/"]
+
+# ---------------------------------------------------------------------------
+# Pytest — add a tests/ directory before running the suite
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--cov=blutter",
+    "--cov=dartvm_fetch_build",
+    "--cov=extract_dart_info",
+    "--cov-report=term-missing",
+]
+
+[tool.coverage.run]
+source = ["blutter", "dartvm_fetch_build", "extract_dart_info"]
+omit = ["scripts/*", "tests/*", "build/*", "dartsdk/*", "external/*"]
