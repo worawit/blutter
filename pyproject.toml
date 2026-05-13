@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=82.0"]
 build-backend = "setuptools.build_meta"
 
 # ---------------------------------------------------------------------------
@@ -30,20 +30,19 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: Microsoft :: Windows",
-    "Operating System :: MacOS",
+    "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
     "Topic :: Software Development :: Disassemblers",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
-    "pyelftools>=0.29",
-    "requests>=2.28",
+    "pyelftools>=0.32",
+    "requests>=2.34",
     # capstone is the native C library used by the C++ build; the Python binding
     # is only needed by scripts/extract_libflutter_functions.py (see [scripts] extra).
 ]
@@ -51,16 +50,14 @@ dependencies = [
 [project.optional-dependencies]
 # Full developer toolchain
 dev = [
-    "ruff>=0.4",
-    "mypy>=1.8",
-    "pytest>=8.0",
-    "pytest-cov>=5.0",
-    "types-requests>=2.31",
+    "ruff>=0.15",
+    "mypy>=2.1",
+    "pytest>=9.0",
+    "pytest-cov>=7.1",
+    "types-requests>=2.33",
 ]
 # Python capstone binding used by scripts/extract_libflutter_functions.py
-# (capstone 4 ships pre-built wheels on all platforms; capstone 5 may require
-# compilation on Windows — install manually if needed)
-scripts = ["capstone>=4.0"]
+scripts = ["capstone>=5.0"]
 
 [project.scripts]
 # Entry point wraps the argparse CLI; `python blutter.py` also still works.
@@ -83,7 +80,7 @@ py-modules = ["blutter", "dartvm_fetch_build", "extract_dart_info"]
 # Ruff — linting + formatting
 # ---------------------------------------------------------------------------
 [tool.ruff]
-target-version = "py38"
+target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]
@@ -98,30 +95,23 @@ ignore = [
 "scripts/*" = ["E402", "F401", "T201"]
 
 [tool.ruff.format]
-quote-style = "single"
+quote-style = "double"
 indent-style = "space"
 
 # ---------------------------------------------------------------------------
 # Mypy — static type checking
 # ---------------------------------------------------------------------------
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 ignore_missing_imports = true   # capstone / pyelftools have no bundled stubs
 warn_unused_ignores = true
-strict_optional = true
 exclude = ["build/", "dartsdk/", "packages/", "external/"]
 
 # ---------------------------------------------------------------------------
-# Pytest — add a tests/ directory before running the suite
+# Pytest — run bare with `pytest`; add --cov flags manually when [dev] is installed
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = [
-    "--cov=blutter",
-    "--cov=dartvm_fetch_build",
-    "--cov=extract_dart_info",
-    "--cov-report=term-missing",
-]
 
 [tool.coverage.run]
 source = ["blutter", "dartvm_fetch_build", "extract_dart_info"]

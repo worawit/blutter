@@ -1,15 +1,14 @@
 import io
 import os
 import re
-import requests
 import sys
 import zipfile
 import zlib
 from struct import unpack
 
+import requests
 from elftools.elf.elffile import ELFFile
-from elftools.elf.enums import ENUM_E_MACHINE
-from elftools.elf.sections import SymbolTableSection
+
 
 # TODO: support both ELF and Mach-O file
 def extract_snapshot_hash_flags(libapp_file):
@@ -24,7 +23,7 @@ def extract_snapshot_hash_flags(libapp_file):
         snapshot_hash = f.read(32).decode()
         data = f.read(256) # should be enough
         flags = data[:data.index(b'\0')].decode().strip().split(' ')
-    
+
     return snapshot_hash, flags
 
 def extract_libflutter_info(libflutter_file):
@@ -39,13 +38,13 @@ def extract_libflutter_info(libflutter_file):
 
         section = elf.get_section_by_name('.rodata')
         data = section.data()
-        
+
         sha_hashes = re.findall(b'\x00([a-f\\d]{40})(?=\x00)', data)
         #print(sha_hashes)
         # all possible engine ids
         engine_ids = [ h.decode() for h in sha_hashes ]
         assert len(engine_ids) == 2, f'found hashes {", ".join(engine_ids)}'
-        
+
         # beta/dev version of flutter might not use stable dart version (we can get dart version from sdk with found engine_id)
         # support stable, beta and dev channels
         m = re.search(br'\x00([\d\w\.-]+) \((stable|beta|dev)\)', data)
@@ -53,7 +52,7 @@ def extract_libflutter_info(libflutter_file):
             dart_version = None
         else:
             dart_version = m.group(1).decode()
-        
+
     return engine_ids, dart_version, arch, 'android'
 
 def get_dart_sdk_url_size(engine_ids):
@@ -64,7 +63,7 @@ def get_dart_sdk_url_size(engine_ids):
         if resp.status_code == 200:
            sdk_size = int(resp.headers['Content-Length'])
            return engine_id, url, sdk_size
-    
+
     return None, None, None
 
 def get_dart_commit(url):
@@ -80,7 +79,7 @@ def get_dart_commit(url):
         if r.status_code // 10 == 20:
             x = next(r.iter_content(chunk_size=4096))
             fp = io.BytesIO(x)
-    
+
     if fp is not None:
         while fp.tell() < 4096-30 and (commit_id is None or dart_version is None):
             #sig, ver, flags, compression, filetime, filedate, crc, compressSize, uncompressSize, filenameLen, extraLen = unpack(fp, '<IHHHHHIIIHH')
@@ -90,14 +89,14 @@ def get_dart_commit(url):
             if extraLen > 0:
                 fp.seek(extraLen, io.SEEK_CUR)
             data = fp.read(compressSize)
-            
+
             # expect compression method to be zipfile.ZIP_DEFLATED
             assert compMethod == zipfile.ZIP_DEFLATED, 'Unexpected compression method'
             if filename == b'dart-sdk/revision':
                 commit_id = zlib.decompress(data, wbits=-zlib.MAX_WBITS).decode().strip()
             elif filename == b'dart-sdk/version':
                 dart_version = zlib.decompress(data, wbits=-zlib.MAX_WBITS).decode().strip()
-    
+
     # TODO: if no revision and version in first 4096 bytes, get the file location from the first zip dir entries at the end of file (less than 256KB)
     return commit_id, dart_version
 
@@ -120,7 +119,7 @@ def extract_dart_info(libapp_file: str, libflutter_file: str):
         # print(commit_id)
         # print(dart_version)
         #assert dart_version == dart_version_sdk
-    
+
     # TODO: os (android or ios) and architecture (arm64 or x64)
     return dart_version, snapshot_hash, flags, arch, os_name
 
