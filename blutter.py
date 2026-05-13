@@ -7,8 +7,9 @@ import platform
 import shutil
 import subprocess
 import sys
-import zipfile
 import tempfile
+import zipfile
+
 from dartvm_fetch_build import DartLibInfo
 
 CMAKE_CMD = "cmake"
@@ -53,13 +54,13 @@ def find_lib_files(indir: str):
         app_file = os.path.join(indir, 'App')
         if not os.path.isfile(app_file):
             sys.exit("Cannot find libapp file")
-    
+
     flutter_file = os.path.join(indir, 'libflutter.so')
     if not os.path.isfile(flutter_file):
         flutter_file = os.path.join(indir, 'Flutter')
         if not os.path.isfile(flutter_file):
             sys.exit("Cannot find libflutter file")
-    
+
     return os.path.abspath(app_file), os.path.abspath(flutter_file)
 
 def extract_libs_from_apk(apk_file: str, out_dir: str):
@@ -67,7 +68,7 @@ def extract_libs_from_apk(apk_file: str, out_dir: str):
         try:
             app_info = zf.getinfo('lib/arm64-v8a/libapp.so')
             flutter_info = zf.getinfo('lib/arm64-v8a/libflutter.so')
-        except:
+        except KeyError:
             sys.exit("Cannot find libapp.so or libflutter.so in the APK")
 
         zf.extract(app_info, out_dir)
@@ -100,7 +101,7 @@ def find_compat_macro(dart_version: str, no_analysis: bool):
         # in Dart 2.19, RecordType might be added to a source code but incomplete
         if dart_version.startswith('3.') and mm.find(b'V(RecordType)') != -1:
             macros.append('-DHAS_RECORD_TYPE=1')
-    
+
     with open(os.path.join(vm_path, 'class_table.h'), 'rb') as f:
         mm = mmap.mmap(f.fileno(), 0, access = mmap.ACCESS_READ)
         # Clean up ClassTable (Merge ClassTable and SharedClassTable back together)
@@ -108,14 +109,14 @@ def find_compat_macro(dart_version: str, no_analysis: bool):
         # the commit moved GetUnboxedFieldsMapAt() from SharedClassTable to ClassTable
         if mm.find(b'class SharedClassTable {') != -1:
             macros.append('-DHAS_SHARED_CLASS_TABLE=1')
-    
+
     with open(os.path.join(vm_path, 'stub_code_list.h'), 'rb') as f:
         mm = mmap.mmap(f.fileno(), 0, access = mmap.ACCESS_READ)
         # Add InitLateStaticField and InitLateFinalStaticField stub
         # https://github.com/dart-lang/sdk/commit/37d45743e11970f0eacc0ec864e97891347185f5
         if mm.find(b'V(InitLateStaticField)') == -1:
             macros.append('-DNO_INIT_LATE_STATIC_FIELD=1')
-    
+
     with open(os.path.join(vm_path, 'object_store.h'), 'rb') as f:
         mm = mmap.mmap(f.fileno(), 0, access = mmap.ACCESS_READ)
         # [vm] Simplify and optimize method extractors
@@ -129,16 +130,16 @@ def find_compat_macro(dart_version: str, no_analysis: bool):
         # https://github.com/dart-lang/sdk/commit/84fd647969f0d74ab63f0994d95b5fc26cac006a
         if mm.find(b'AsTruncatedInt64Value()') == -1:
             macros.append('-DUNIFORM_INTEGER_ACCESS=1')
-    
+
     if no_analysis:
         macros.append('-DNO_CODE_ANALYSIS=1')
-    
+
     return macros
 
 def cmake_blutter(input: BlutterInput):
     blutter_dir = os.path.join(SCRIPT_DIR, 'blutter')
     builddir = os.path.join(BUILD_DIR, input.blutter_name)
-    
+
     macros = find_compat_macro(input.dart_info.version, input.no_analysis)
     my_env = None
     if platform.system() == 'Darwin':
@@ -175,7 +176,7 @@ def build_and_run(input: BlutterInput):
         if not os.path.isfile(dartlib_file):
             from dartvm_fetch_build import fetch_and_build
             fetch_and_build(input.dart_info)
-        
+
         input.rebuild_blutter = True
 
     # creating Visual Studio solution overrides building
@@ -194,7 +195,7 @@ def build_and_run(input: BlutterInput):
         else:
             assert False, "Unknown Visual Studio version"
 
-        subprocess.run([CMAKE_CMD, '-G', generator, '-A', 'x64', '-B', input.outdir, f'-DDARTLIB={input.dart_info.lib_name}', 
+        subprocess.run([CMAKE_CMD, '-G', generator, '-A', 'x64', '-B', input.outdir, f'-DDARTLIB={input.dart_info.lib_name}',
                         f'-DNAME_SUFFIX={input.name_suffix}', f'-DDBG_CMD:STRING={dbg_cmd_args}'] + macros + [blutter_dir], check=True)
         dbg_exe_dir = os.path.join(input.outdir, 'Debug')
         os.makedirs(dbg_exe_dir, exist_ok=True)
@@ -206,7 +207,7 @@ def build_and_run(input: BlutterInput):
             cmake_blutter(input)
             assert os.path.isfile(input.blutter_file), "Build complete but cannot find Blutter binary: " + input.blutter_file
 
-        # execute blutter    
+        # execute blutter
         subprocess.run([input.blutter_file, '-i', input.libapp_path, '-o', input.outdir], check=True)
 
 def main_no_flutter(libapp_path: str, dart_version: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
@@ -214,7 +215,7 @@ def main_no_flutter(libapp_path: str, dart_version: str, outdir: str, rebuild_bl
     dart_info = DartLibInfo(version, os_name, arch)
     input = BlutterInput(libapp_path, dart_info, outdir, rebuild_blutter, create_vs_sln, no_analysis)
     build_and_run(input)
-    
+
 def main2(libapp_path: str, libflutter_path: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
     dart_info = get_dart_lib_info(libapp_path, libflutter_path)
     input = BlutterInput(libapp_path, dart_info, outdir, rebuild_blutter, create_vs_sln, no_analysis)
@@ -230,7 +231,7 @@ def main(indir: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no
         main2(libapp_file, libflutter_file, outdir, rebuild_blutter, create_vs_sln, no_analysis)
 
 
-if __name__ == "__main__":
+def cli() -> None:
     parser = argparse.ArgumentParser(
         prog='B(l)utter',
         description='Reversing a flutter application tool')
@@ -248,3 +249,7 @@ if __name__ == "__main__":
         main(args.indir, args.outdir, args.rebuild, args.vs_sln, args.no_analysis)
     else:
         main_no_flutter(args.indir, args.dart_version, args.outdir, args.rebuild, args.vs_sln, args.no_analysis)
+
+
+if __name__ == "__main__":
+    cli()
