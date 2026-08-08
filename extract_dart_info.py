@@ -15,9 +15,13 @@ from elftools.elf.sections import SymbolTableSection
 def extract_snapshot_hash_flags(libapp_file):
     with open(libapp_file, 'rb') as f:
         elf = ELFFile(f)
-        # find "_kDartVmSnapshotData" symbol
+        # find the snapshot data symbol
+        # Dart >= 3.11 (May 2026) dropped the VM isolate and renamed the symbols,
+        # so "_kDartVmSnapshotData" became "_kDartSnapshotData"
         dynsym = elf.get_section_by_name('.dynsym')
-        sym = dynsym.get_symbol_by_name('_kDartVmSnapshotData')[0]
+        syms = dynsym.get_symbol_by_name('_kDartVmSnapshotData') or dynsym.get_symbol_by_name('_kDartSnapshotData')
+        assert syms is not None, "Cannot find Dart snapshot data symbol"
+        sym = syms[0]
         #section = elf.get_section(sym['st_shndx'])
         assert sym['st_size'] > 128
         f.seek(sym['st_value']+20)
