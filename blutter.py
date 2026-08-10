@@ -48,18 +48,23 @@ class BlutterInput:
 
 
 def find_lib_files(indir: str):
-    app_file = os.path.join(indir, 'libapp.so')
-    if not os.path.isfile(app_file):
-        app_file = os.path.join(indir, 'App')
-        if not os.path.isfile(app_file):
-            sys.exit("Cannot find libapp file")
-    
-    flutter_file = os.path.join(indir, 'libflutter.so')
-    if not os.path.isfile(flutter_file):
-        flutter_file = os.path.join(indir, 'Flutter')
-        if not os.path.isfile(flutter_file):
-            sys.exit("Cannot find libflutter file")
-    
+    # an iOS application keeps each binary in its own framework directory,
+    # so accept the "Frameworks" directory of the bundle as well
+    def find_one(*candidates):
+        for candidate in candidates:
+            path = os.path.join(indir, candidate)
+            if os.path.isfile(path):
+                return path
+        return None
+
+    app_file = find_one('libapp.so', 'App', os.path.join('App.framework', 'App'))
+    if app_file is None:
+        sys.exit("Cannot find libapp file")
+
+    flutter_file = find_one('libflutter.so', 'Flutter', os.path.join('Flutter.framework', 'Flutter'))
+    if flutter_file is None:
+        sys.exit("Cannot find libflutter file")
+
     return os.path.abspath(app_file), os.path.abspath(flutter_file)
 
 def extract_libs_from_apk(apk_file: str, out_dir: str):
