@@ -81,9 +81,12 @@ constexpr arm64_reg CSREG_DART_WB_VALUE = ToCapstoneReg(dart::kWriteBarrierValue
 constexpr arm64_reg CSREG_DART_WB_SLOT = ToCapstoneReg(dart::kWriteBarrierSlotReg);
 constexpr arm64_reg CSREG_DART_THR = ToCapstoneReg(dart::THR);
 constexpr arm64_reg CSREG_DART_PP = ToCapstoneReg(dart::PP);
-#if defined(DART_COMPRESSED_POINTERS)
+// HEAP_BITS is "write_barrier_mask << 32 | heap_base >> 32", so the write
+// barrier reads it even when pointers are not compressed (as on iOS). The
+// pointer decompression patterns simply never show up in such a build.
+// Note: this used to be guarded by DART_COMPRESSED_POINTERS, but the guard was
+// unusable - CodeAnalyzer_arm64.cpp refers to the register unconditionally.
 constexpr arm64_reg CSREG_DART_HEAP = ToCapstoneReg(dart::HEAP_BITS);
-#endif
 constexpr arm64_reg CSREG_DART_TMP = ToCapstoneReg(dart::TMP);
 constexpr arm64_reg CSREG_DART_TMP2 = ToCapstoneReg(dart::TMP2);
 // Note: kTagReg is normally in wrapper function. can ignore it.
