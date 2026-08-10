@@ -32,6 +32,8 @@ set(SRCS
     FridaWriter.cpp
     FridaWriter.h
     HtArrayIterator.h
+    MachOHelper.cpp
+    MachOHelper.h
     Util.cpp
     Util.h
     VarValue.cpp

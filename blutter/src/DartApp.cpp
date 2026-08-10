@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "DartApp.h"
 #include "ElfHelper.h"
+#include "MachOHelper.h"
 #include "DartLoader.h"
 PRAGMA_WARNING(push, 0)
 #include <vm/stub_code.h>
@@ -11,7 +12,8 @@ PRAGMA_WARNING(pop)
 
 DartApp::DartApp(const char* path) : ppool(NULL), nativeLib(0xdeadead), throwStubAddr(0)
 {
-	auto libInfo = ElfHelper::MapLibAppSo(path);
+	// An Android app ships libapp.so, an iOS/macOS one App.framework/App.
+	auto libInfo = MachOHelper::IsMachO(path) ? MachOHelper::MapLibApp(path) : ElfHelper::MapLibAppSo(path);
 	lib_base = libInfo.lib;
 	vm_snapshot_data = libInfo.vm_snapshot_data;
 	vm_snapshot_instructions = libInfo.vm_snapshot_instructions;
