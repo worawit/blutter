@@ -41,6 +41,7 @@ class MachO:
         with open(path, 'rb') as f:
             self.data = f.read()
 
+        self.slice_size = None  # set by _find_slice for a universal binary
         self.slice_off = self._find_slice()
         magic = self.data[self.slice_off:self.slice_off + 4]
         assert magic == MH_MAGIC_64, f'Unsupported Mach-O image: {magic.hex()}'
@@ -58,6 +59,17 @@ class MachO:
                 self.symtab = unpack('<IIII', self._read(off + 8, 16))
             off += cmdsize
 
+    def slice_data(self):
+        """Just the selected slice.
+
+        Every slice of a universal binary carries its own copy of strings like
+        the engine version, so searching self.data finds whichever slice comes
+        first rather than the one being analyzed.
+        """
+        if self.slice_size is None:
+            return self.data[self.slice_off:]
+        return self.data[self.slice_off:self.slice_off + self.slice_size]
+
     def _find_slice(self):
         # A 64-bit fat header uses 32-byte entries rather than 20, so parsing it
         # as a 32-bit one silently yields nonsense offsets. Say so instead.
@@ -69,13 +81,15 @@ class MachO:
         count = unpack('>I', self.data[4:8])[0]
         fallback = None
         for i in range(count):
-            cputype, _, offset, _, _ = unpack('>iIIII', self.data[8 + i * 20:28 + i * 20])
+            cputype, _, offset, size, _ = unpack('>iIIII', self.data[8 + i * 20:28 + i * 20])
             if cputype == CPU_TYPE_ARM64:
+                self.slice_size = size
                 return offset
             if cputype == CPU_TYPE_X86_64 and fallback is None:
-                fallback = offset
+                fallback = (offset, size)
         assert fallback is not None, 'No arm64 or x64 image in the universal binary'
-        return fallback
+        self.slice_size = fallback[1]
+        return fallback[0]
 
     def _read(self, offset, size):
         start = self.slice_off + offset
@@ -117,7 +131,7 @@ def extract_flutter_framework_info(flutter_file):
     # The engine embeds the Dart VM version string, which names the target
     # directly, e.g. '3.10.7 (stable) (Tue Dec 23 ...) on "ios_arm64"'.
     macho = MachO(flutter_file)
-    m = re.search(br'([\d][\w\.\-]*) \((?:stable|beta|dev)\) \([^)]*\) on "(ios|macos)_(arm64|x64)"', macho.data)
+    m = re.search(br'([\d][\w\.\-]*) \((?:stable|beta|dev)\) \([^)]*\) on "(ios|macos)_(arm64|x64)"', macho.slice_data())
     assert m is not None, 'Cannot find the Dart version in the Flutter framework'
     dart_version = m.group(1).decode()
     os_name = m.group(2).decode()
