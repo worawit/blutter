@@ -14,17 +14,24 @@ Standard library only, but imports dartvm_fetch_build; run with the interpreter
 Blutter itself uses.
 """
 
+import os
 import pathlib
 import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+# A runner asks for strict mode so a failed dependency install fails the run
+# instead of quietly skipping. Sample-driven skips stay skips.
+STRICT = os.environ.get("BLUTTER_TESTS_STRICT") == "1"
+
 try:
     from dartvm_fetch_build import DartLibInfo
 
     IMPORT_ERROR = None
 except ImportError as exc:  # pragma: no cover - depends on the environment
+    if STRICT:
+        raise
     DartLibInfo = None
     IMPORT_ERROR = str(exc)
 

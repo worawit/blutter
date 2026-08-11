@@ -36,11 +36,17 @@ from fat_macho import (  # noqa: E402
     thin_macho64,
 )
 
+# A runner asks for strict mode so a failed dependency install fails the run
+# instead of quietly skipping. Sample-driven skips stay skips.
+STRICT = os.environ.get("BLUTTER_TESTS_STRICT") == "1"
+
 try:
     from extract_dart_info import MachO, is_macho
 
     IMPORT_ERROR = None
 except ImportError as exc:  # pragma: no cover - depends on the environment
+    if STRICT:
+        raise
     MachO = None
     is_macho = None
     IMPORT_ERROR = str(exc)
