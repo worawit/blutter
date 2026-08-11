@@ -14,6 +14,8 @@ from elftools.elf.sections import SymbolTableSection
 MH_MAGIC_64 = b'\xcf\xfa\xed\xfe'
 FAT_MAGIC = b'\xca\xfe\xba\xbe'  # a fat header is always stored big endian
 FAT_CIGAM = b'\xbe\xba\xfe\xca'
+FAT_MAGIC_64 = b'\xca\xfe\xba\xbf'  # fat_arch_64 entries, not supported
+FAT_CIGAM_64 = b'\xbf\xba\xfe\xca'
 LC_SYMTAB = 0x2
 LC_SEGMENT_64 = 0x19
 N_STAB = 0xe0
@@ -57,6 +59,10 @@ class MachO:
             off += cmdsize
 
     def _find_slice(self):
+        # A 64-bit fat header uses 32-byte entries rather than 20, so parsing it
+        # as a 32-bit one silently yields nonsense offsets. Say so instead.
+        assert self.data[:4] not in (FAT_MAGIC_64, FAT_CIGAM_64), \
+            'Universal binary with a 64-bit fat header (FAT_MAGIC_64) is not supported'
         if self.data[:4] not in (FAT_MAGIC, FAT_CIGAM):
             return 0
         # Prefer arm64, which is what Flutter ships for devices.

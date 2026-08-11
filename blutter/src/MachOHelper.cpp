@@ -17,6 +17,10 @@ constexpr uint32_t MH_CIGAM_64 = 0xcffaedfe;
 // A fat (universal) header is always stored big endian.
 constexpr uint32_t FAT_MAGIC = 0xcafebabe;
 constexpr uint32_t FAT_CIGAM = 0xbebafeca;
+// fat_arch_64 entries are 32 bytes rather than 20, so a 64-bit fat header
+// parsed as a 32-bit one yields silently wrong slice offsets.
+constexpr uint32_t FAT_MAGIC_64 = 0xcafebabf;
+constexpr uint32_t FAT_CIGAM_64 = 0xbfbafeca;
 
 constexpr uint32_t LC_SYMTAB = 0x02;
 constexpr uint32_t LC_SEGMENT_64 = 0x19;
@@ -141,6 +145,8 @@ const T* at(const std::vector<uint8_t>& file, uint64_t offset, uint64_t count = 
 uint64_t find_slice(const std::vector<uint8_t>& file)
 {
 	const auto magic = *at<uint32_t>(file, 0);
+	if (magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64)
+		throw std::invalid_argument("Mach-O: universal binary with a 64-bit fat header (FAT_MAGIC_64) is not supported");
 	if (magic != FAT_MAGIC && magic != FAT_CIGAM)
 		return 0;
 
@@ -186,7 +192,8 @@ bool MachOHelper::IsMachO(const char* path)
 
 	// Report the unsupported flavours too, so MapLibApp can explain why.
 	return magic == MH_MAGIC_64 || magic == MH_CIGAM_64 || magic == MH_MAGIC ||
-		magic == MH_CIGAM || magic == FAT_MAGIC || magic == FAT_CIGAM;
+		magic == MH_CIGAM || magic == FAT_MAGIC || magic == FAT_CIGAM ||
+		magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64;
 }
 
 LibAppInfo MachOHelper::MapLibApp(const char* path)
