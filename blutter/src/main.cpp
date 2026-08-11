@@ -21,7 +21,11 @@ int main(int argc, char** argv)
 
 		std::filesystem::path outDir{ args::get(outdir) };
 		std::error_code ec;
-		if (!std::filesystem::create_directory(outDir, ec) && ec.value() != 0) {
+		// create_directories, not create_directory: an output path whose parent
+		// does not exist yet is otherwise rejected here, after the expensive
+		// Dart VM build has already run. Both return false for an existing
+		// directory without setting ec, so the guard below is unchanged.
+		if (!std::filesystem::create_directories(outDir, ec) && ec.value() != 0) {
 			std::cerr << "Failed to create output directory: " << ec.message() << "\n";
 			return 1;
 		}
