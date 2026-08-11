@@ -20,21 +20,52 @@ CPU_TYPE_ARM64 = 0x0100000C
 MH_DYLIB = 0x6
 DEFAULT_ALIGN = 14  # 2**14 = 16384, what Apple's tooling uses
 
+LC_BUILD_VERSION = 0x32
 
-def thin_macho64(cputype: int = CPU_TYPE_ARM64, body: bytes = b"") -> bytes:
-    """A minimal but structurally valid 64-bit thin Mach-O with no load commands."""
+PLATFORM_MACOS = 1
+PLATFORM_IOS = 2
+
+
+def build_version_command(platform: int) -> bytes:
+    """An LC_BUILD_VERSION load command, which names the target platform.
+
+    Both a real iOS and a real macOS Flutter engine carry one, so it is a more
+    dependable source of the target than any embedded string.
+    """
+    return struct.pack(
+        "<IIIIII",
+        LC_BUILD_VERSION,
+        24,  # cmdsize, no tool entries
+        platform,
+        0,  # minos
+        0,  # sdk
+        0,  # ntools
+    )
+
+
+def thin_macho64(
+    cputype: int = CPU_TYPE_ARM64,
+    body: bytes = b"",
+    commands: "list[bytes] | None" = None,
+) -> bytes:
+    """A minimal but structurally valid 64-bit thin Mach-O.
+
+    `commands` are whole load commands, already packed.
+    """
+    commands = list(commands or [])
+    payload = b"".join(commands)
     header = struct.pack(
         "<IiiIIIII",
         MH_MAGIC_64,
         cputype,
         0,  # cpusubtype
         MH_DYLIB,  # filetype
-        0,  # ncmds
-        0,  # sizeofcmds
+        len(commands),  # ncmds
+        len(payload),  # sizeofcmds
         0,  # flags
         0,  # reserved
     )
-    return header + body
+    return header + payload + body
 
 
 def build_fat(slices: list[tuple[int, bytes]], align: int = DEFAULT_ALIGN) -> bytes:
