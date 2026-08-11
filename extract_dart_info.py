@@ -18,6 +18,9 @@ FAT_MAGIC_64 = b'\xca\xfe\xba\xbf'  # fat_arch_64 entries, not supported
 FAT_CIGAM_64 = b'\xbf\xba\xfe\xca'
 LC_SYMTAB = 0x2
 LC_SEGMENT_64 = 0x19
+LC_BUILD_VERSION = 0x32
+# what a Mach-O calls the platforms Blutter can analyze
+MACHO_PLATFORMS = {1: 'macos', 2: 'ios'}
 N_STAB = 0xe0
 N_TYPE = 0x0e
 N_SECT = 0x0e
@@ -46,9 +49,10 @@ class MachO:
         magic = self.data[self.slice_off:self.slice_off + 4]
         assert magic == MH_MAGIC_64, f'Unsupported Mach-O image: {magic.hex()}'
 
-        _, _, _, _, ncmds, _, _, _ = unpack('<IiiIIIII', self._read(0, 32))
+        _, self.cputype, _, _, ncmds, _, _, _ = unpack('<IiiIIIII', self._read(0, 32))
         self.segments = []  # (vmaddr, vmsize, fileoff, filesize)
         self.symtab = None  # (symoff, nsyms, stroff, strsize)
+        self.platform = None  # from LC_BUILD_VERSION, absent in older images
         off = 32
         for _ in range(ncmds):
             cmd, cmdsize = unpack('<II', self._read(off, 8))
@@ -57,7 +61,22 @@ class MachO:
                 self.segments.append((vmaddr, vmsize, fileoff, filesize))
             elif cmd == LC_SYMTAB:
                 self.symtab = unpack('<IIII', self._read(off + 8, 16))
+            elif cmd == LC_BUILD_VERSION:
+                self.platform = unpack('<I', self._read(off + 8, 4))[0]
             off += cmdsize
+
+    def arch(self):
+        """The architecture of the image itself, which cannot go missing the
+        way an embedded version string can."""
+        if self.cputype == CPU_TYPE_ARM64:
+            return 'arm64'
+        if self.cputype == CPU_TYPE_X86_64:
+            return 'x64'
+        return None
+
+    def os_name(self):
+        """The target named by LC_BUILD_VERSION, if the image carries one."""
+        return MACHO_PLATFORMS.get(self.platform)
 
     def slice_data(self):
         """Just the selected slice.
@@ -128,16 +147,36 @@ def extract_snapshot_hash_flags_macho(app_file):
 
 
 def extract_flutter_framework_info(flutter_file):
-    # The engine embeds the Dart VM version string, which names the target
-    # directly, e.g. '3.10.7 (stable) (Tue Dec 23 ...) on "ios_arm64"'.
+    """Dart version, engine ids and target, from a Mach-O Flutter engine.
+
+    The version string names the target too, e.g.
+    '3.10.7 (stable) (Tue Dec 23 ...) on "ios_arm64"'. It is not dependable on
+    its own: beta and dev channel engines do not always carry one. So the
+    target is read from the image — its header names the architecture and
+    LC_BUILD_VERSION names the platform — and the string supplies only the Dart
+    version, with the engine ids left for the caller to look up when it is
+    absent.
+
+    Note a macOS engine embeds engine ids exactly as an ELF one does, while an
+    iOS engine embeds none, so the lookup can rescue the first and not the
+    second.
+    """
     macho = MachO(flutter_file)
-    m = re.search(br'([\d][\w\.\-]*) \((?:stable|beta|dev)\) \([^)]*\) on "(ios|macos)_(arm64|x64)"', macho.slice_data())
-    assert m is not None, 'Cannot find the Dart version in the Flutter framework'
-    dart_version = m.group(1).decode()
-    os_name = m.group(2).decode()
-    arch = m.group(3).decode()
-    # engine ids are only used to look up an unknown Dart version
-    return [], dart_version, arch, os_name
+    data = macho.slice_data()
+
+    m = re.search(br'([\d][\w\.\-]*) \((?:stable|beta|dev)\) \([^)]*\) on "(ios|macos)_(arm64|x64)"', data)
+    dart_version = m.group(1).decode() if m is not None else None
+
+    arch = macho.arch()
+    assert arch is not None, f'Unsupported architecture: cputype {macho.cputype:#x}'
+    # the string is the only fallback for the platform, and only older images
+    # lack LC_BUILD_VERSION
+    os_name = macho.os_name() or (m.group(2).decode() if m is not None else None)
+    assert os_name is not None, 'Cannot determine whether this is an iOS or macOS image'
+
+    engine_ids = [h.decode() for h in re.findall(b'\x00([a-f\\d]{40})(?=\x00)', data)]
+
+    return engine_ids, dart_version, arch, os_name
 
 
 def extract_snapshot_hash_flags(libapp_file):
@@ -230,32 +269,26 @@ def get_dart_commit(url):
     return commit_id, dart_version
 
 def extract_dart_info(libapp_file: str, libflutter_file: str):
-    # An iOS application ships Mach-O images instead of libapp.so/libflutter.so
+    # An iOS or macOS application ships Mach-O images instead of
+    # libapp.so/libflutter.so
     if is_macho(libapp_file):
         snapshot_hash, flags = extract_snapshot_hash_flags_macho(libapp_file)
-        _, dart_version, arch, os_name = extract_flutter_framework_info(libflutter_file)
-        return dart_version, snapshot_hash, flags, arch, os_name
+        engine_ids, dart_version, arch, os_name = extract_flutter_framework_info(libflutter_file)
+    else:
+        snapshot_hash, flags = extract_snapshot_hash_flags(libapp_file)
+        engine_ids, dart_version, arch, os_name = extract_libflutter_info(libflutter_file)
 
-    snapshot_hash, flags = extract_snapshot_hash_flags(libapp_file)
-    #print('snapshot hash', snapshot_hash)
-    #print(flags)
-
-    engine_ids, dart_version, arch, os_name = extract_libflutter_info(libflutter_file)
-    # print('possible engine ids', engine_ids)
-    # print('dart version', dart_version)
-
+    # A beta or dev channel engine does not always name its Dart version. The
+    # engine ids beside it identify the SDK it was built from, so ask the
+    # archive. Both image formats get this; only ELF used to.
     if dart_version is None:
         engine_id, sdk_url, sdk_size = get_dart_sdk_url_size(engine_ids)
-        # print(engine_id)
-        # print(sdk_url)
-        # print(sdk_size)
-
+        assert sdk_url is not None, (
+            'Cannot determine the Dart version: the engine names no version and '
+            f'{"none of its engine ids match a published SDK" if engine_ids else "carries no engine ids"}. '
+            'Pass --dart-version to say which one to build.')
         commit_id, dart_version = get_dart_commit(sdk_url)
-        # print(commit_id)
-        # print(dart_version)
-        #assert dart_version == dart_version_sdk
-    
-    # TODO: os (android or ios) and architecture (arm64 or x64)
+
     return dart_version, snapshot_hash, flags, arch, os_name
 
 
