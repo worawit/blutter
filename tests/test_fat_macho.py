@@ -117,6 +117,63 @@ class FindSliceTests(unittest.TestCase):
                 MachO(path)
 
 
+def version_string(arch: str, version: str = "3.11.5") -> bytes:
+    """The engine's embedded Dart version string, which names its target."""
+    return (
+        f'{version} (stable) (Mon Jan 1 00:00:00 2026 +0000) on "macos_{arch}"'.encode()
+    )
+
+
+@unittest.skipIf(MachO is None, f"extract_dart_info not importable: {IMPORT_ERROR}")
+class VersionStringSliceTests(unittest.TestCase):
+    """Reading the target out of a universal engine binary.
+
+    Every slice of a universal build carries its own version string. Searching
+    the whole file finds whichever slice comes first, which is how a universal
+    macOS engine reported `x64` while the snapshot it shipped alongside said
+    `arm64` — the analysis would then have been attempted with the wrong Dart
+    VM entirely.
+    """
+
+    def build_universal_engine(self, tmp: str, first: str, second: str) -> str:
+        from fat_macho import build_fat as _build_fat
+
+        cpu = {"x64": CPU_TYPE_X86_64, "arm64": CPU_TYPE_ARM64}
+        fat = _build_fat(
+            [
+                (cpu[first], thin_macho64(cpu[first], version_string(first))),
+                (cpu[second], thin_macho64(cpu[second], version_string(second))),
+            ]
+        )
+        return write(tmp, "FlutterMacOS", fat)
+
+    def test_arch_comes_from_the_selected_slice_not_the_first_one(self):
+        from extract_dart_info import extract_flutter_framework_info
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.build_universal_engine(tmp, first="x64", second="arm64")
+            _, version, arch, os_name = extract_flutter_framework_info(path)
+            self.assertEqual((version, arch, os_name), ("3.11.5", "arm64", "macos"))
+
+    def test_arch_is_right_when_arm64_is_listed_first_too(self):
+        from extract_dart_info import extract_flutter_framework_info
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.build_universal_engine(tmp, first="arm64", second="x64")
+            _, version, arch, os_name = extract_flutter_framework_info(path)
+            self.assertEqual(arch, "arm64")
+
+    def test_thin_engine_still_reports_its_own_arch(self):
+        from extract_dart_info import extract_flutter_framework_info
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(
+                tmp, "FlutterMacOS", thin_macho64(CPU_TYPE_ARM64, version_string("arm64"))
+            )
+            _, _, arch, os_name = extract_flutter_framework_info(path)
+            self.assertEqual((arch, os_name), ("arm64", "macos"))
+
+
 BLUTTER_BIN = os.environ.get("BLUTTER_BIN")
 THIN_SAMPLE = os.environ.get("BLUTTER_TEST_MACHO")
 
