@@ -3345,18 +3345,23 @@ static ArrayOp getArrayOp(AsmIterator& insn, int32_t arr_data_offset)
 	ArrayOp op;
 	if (insn.writeback())
 		return ArrayOp();
+	// Array::data_offset() is 0x18 uncompressed but 0x10 compressed, because the
+	// two header fields either side of it halve. This used to be the literal
+	// 0x17, i.e. the uncompressed answer, so on a compressed build no access
+	// ever matched and every List element fell through to Unknown.
+	const bool isListData = arr_data_offset == dart::Array::data_offset() - dart::kHeapObjectTag;
 	switch (insn.id()) {
 	case ARM64_INS_LDUR: {
 		// for 64 bit integer, LDUR is used too
 		const auto regSize = GetCsRegSize(insn.ops(0).reg);
 		//if (regSize == dart::kCompressedWordSize)
-		return ArrayOp(regSize, true, arr_data_offset == 0x17 ? ArrayOp::List : ArrayOp::Unknown);
+		return ArrayOp(regSize, true, isListData ? ArrayOp::List : ArrayOp::Unknown);
 		//return ArrayOp(regSize, true, ArrayOp::TypedUnknown);
 	}
 	case ARM64_INS_LDURSW:
 		return ArrayOp(4, true, ArrayOp::TypedSigned);
 	case ARM64_INS_LDRB:
-		return ArrayOp(1, true, arr_data_offset == 0x17 ? ArrayOp::List : ArrayOp::TypedUnsigned);
+		return ArrayOp(1, true, isListData ? ArrayOp::List : ArrayOp::TypedUnsigned);
 	case ARM64_INS_LDRSB:
 		return ArrayOp(1, true, ArrayOp::TypedSigned);
 	case ARM64_INS_LDRH:
@@ -3366,7 +3371,7 @@ static ArrayOp getArrayOp(AsmIterator& insn, int32_t arr_data_offset)
 	case ARM64_INS_STUR: {
 		const auto regSize = GetCsRegSize(insn.ops(0).reg);
 		//if (regSize == dart::kCompressedWordSize)
-		return ArrayOp(regSize, false, arr_data_offset == 0x17 ? ArrayOp::List : ArrayOp::Unknown);
+		return ArrayOp(regSize, false, isListData ? ArrayOp::List : ArrayOp::Unknown);
 		//return ArrayOp(regSize, false, ArrayOp::TypedUnknown);
 	}
 	case ARM64_INS_STRB:
@@ -3572,7 +3577,14 @@ std::unique_ptr<ILInstr> FunctionAnalyzer::processLoadStore(AsmIterator& insn)
 			}
 			else {
 				// array
-				const auto idx = VarStorage::NewSmallImm((offset + dart::kHeapObjectTag - dart::UntaggedTypedData::payload_offset()) / arrayOp.size);
+				// The index is relative to where the payload starts, and that
+				// differs by array kind: an Array (List) has a type_arguments
+				// field ahead of its data, TypedData does not. Computing a List
+				// index off the TypedData base yields negative indices.
+				const int32_t payload_offset = arrayOp.arrType == ArrayOp::List
+					? (int32_t)(dart::Array::data_offset() - dart::kHeapObjectTag)
+					: (int32_t)(dart::UntaggedTypedData::payload_offset() - dart::kHeapObjectTag);
+				const auto idx = VarStorage::NewSmallImm((offset - payload_offset) / arrayOp.size);
 				if (arrayOp.isLoad) {
 					return std::make_unique<LoadArrayElementInstr>(insn.Wrap(marker.Take()), valReg, objReg, idx, arrayOp);
 				}
