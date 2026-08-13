@@ -677,7 +677,18 @@ std::unique_ptr<CallLeafRuntimeInstr> FunctionAnalyzer::processCallLeafRuntime(A
 		std::vector<std::unique_ptr<MoveRegInstr>> movILs;
 		while (true) {
 			auto il = processMoveRegInstr(insn);
-			INSN_ASSERT(il);
+			if (!il) {
+				// Dart 3.11+ may emit an unscaled load from the caller frame
+				// (e.g., ldur x2, [x29, #-8]) to reload a parameter before the
+				// leaf runtime call. It is not a register move, so skip it.
+				if ((insn.id() == ARM64_INS_LDR || insn.id() == ARM64_INS_LDUR) && insn.ops(1).mem.base == CSREG_DART_FP) {
+					++insn;
+					continue;
+				}
+				else {
+					INSN_ASSERT(il);
+				}
+			}
 			if (il->srcReg == A64::Register::FP) {
 				INSN_ASSERT(il->dstReg == A64::Register::TMP2);
 				break;
