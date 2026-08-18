@@ -134,8 +134,19 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 	//   use header file then adding comment is much faster
 	auto comments = DumpStructHeaderFile((outDir / "ida_dart_struct.h").string());
 	of << R"CBLOCK(
-import ida_struct
+import idaapi
+import idc
+import ida_typeinf
 import os
+
+def get_struc_by_id(sid):
+	if sid == idc.BADADDR:
+		return None
+	tif = ida_typeinf.tinfo_t()
+	if tif.get_type_by_tid(sid):
+		return tif
+	return None
+
 def create_Dart_structs():
 	sid1 = idc.get_struc_id("DartThread")
 	if sid1 != idc.BADADDR:
@@ -144,10 +155,18 @@ def create_Dart_structs():
 	idaapi.idc_parse_types(hdr_file, idc.PT_FILE)
 	sid1 = idc.import_type(-1, "DartThread")
 	sid2 = idc.import_type(-1, "DartObjectPool")
-	struc = ida_struct.get_struc(sid2)
+	struc = get_struc_by_id(sid2)
 )CBLOCK";
 	for (const auto& [offset, comment] : comments) {
-		of << "\tida_struct.set_member_cmt(ida_struct.get_member(struc, " << offset << "), '''" << comment << "''', True)\n";
+		of << "\tif struc:\n";
+		of << "\t\tudt_data = ida_typeinf.udt_type_data_t()\n";
+		of << "\t\tif struc.get_udt_details(udt_data):\n";
+		of << "\t\t\tfor i in range(udt_data.size()):\n";
+		of << "\t\t\t\tudm = udt_data[i]\n";
+		of << "\t\t\t\tif udm.offset == " << offset << ":\n";
+		of << "\t\t\t\t\tudm.cmt = '''" << comment << "'''\n";
+		of << "\t\t\t\t\tstruc.create_udt(udt_data, ida_typeinf.BTF_STRUCT)\n";
+		of << "\t\t\t\t\tbreak\n";
 	}
 	of << "\treturn sid1, sid2\n";
 	of << "thrs, pps = create_Dart_structs()\n";
@@ -539,9 +558,7 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		}
 		return std::format("Code: {} ({:#x})", code.ToCString(), ep);
 	}
-	case dart::kArrayCid:
 	case dart::kImmutableArrayCid: {
-		// Note: since Dart 3.7, Ojbect Pool is mutable. so, Array is used too
 		// Objects in Object Pool immutable, so only immutable array is used for array
 		// Most of no type arguments in Object Pool are Argument Descriptor
 		const auto& arr = dart::Array::Cast(obj);
