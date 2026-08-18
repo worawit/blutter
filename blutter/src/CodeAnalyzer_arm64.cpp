@@ -183,6 +183,7 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 	}
 }
 
+#if defined(DART_COMPRESSED_POINTERS)
 static inline void handleDecompressPointer(AsmIterator& insn, arm64_reg reg) {
 	INSN_ASSERT(insn.id() == ARM64_INS_ADD);
 	INSN_ASSERT(insn.ops(0).reg == insn.ops(1).reg && insn.ops(0).reg == reg);
@@ -195,6 +196,19 @@ static inline void handleExtraDecompressPointer(AsmIterator& insn, arm64_reg reg
 	if (!(insn.ops(0).reg == insn.ops(1).reg && insn.ops(0).reg == reg)) return;
 	if (!(insn.ops(2).reg == CSREG_DART_HEAP && insn.ops(2).shift.value == 32)) return;
 	++insn;
+}
+#else
+static inline void handleDecompressPointer(AsmIterator&, arm64_reg) {}
+static inline void handleExtraDecompressPointer(AsmIterator&, arm64_reg) {}
+#endif
+
+static bool isScaledRegOperand(const cs_arm64_op& op, arm64_reg reg, uint8_t scale)
+{
+	if (ToCapstoneReg(op.reg) != ToCapstoneReg(reg))
+		return false;
+	if ((op.ext == ARM64_EXT_SXTW || op.ext == ARM64_EXT_UXTW) && op.shift.value == scale)
+		return true;
+	return op.ext == ARM64_EXT_INVALID && op.shift.type == ARM64_SFT_LSL && op.shift.value == scale;
 }
 
 // Handle leave-frame restore patterns for newer Dart ARM64 codegen.
@@ -934,7 +948,7 @@ void FunctionAnalyzer::handleFixedParameters(AsmIterator& insn, arm64_reg paramC
 			break;
 		INSN_ASSERT(insn.ops(1).reg == CSREG_DART_FP);
 		// shift only 2 because the number of parameter is Smi (tagged)
-		INSN_ASSERT(ToCapstoneReg(insn.ops(2).reg) == paramCntReg && insn.ops(2).ext == ARM64_EXT_SXTW && insn.ops(2).shift.value == 2);
+		INSN_ASSERT(isScaledRegOperand(insn.ops(2), paramCntReg, 2));
 		const auto tmpReg = insn.ops(0).reg;
 		++insn;
 
@@ -1006,7 +1020,7 @@ void FunctionAnalyzer::handleOptionalPositionalParameters(AsmIterator& insn, arm
 		// parameter might not be used and no loading value
 		if (insn.id() == ARM64_INS_ADD && insn.ops(1).reg == CSREG_DART_FP) {
 			// shift only 2 because the number of parameter is Smi (tagged)
-			INSN_ASSERT(ToCapstoneReg(insn.ops(2).reg) == optionalParamCntReg && insn.ops(2).ext == ARM64_EXT_SXTW && insn.ops(2).shift.value == 2);
+			INSN_ASSERT(isScaledRegOperand(insn.ops(2), optionalParamCntReg, 2));
 			const auto tmpReg = insn.ops(0).reg;
 			++insn;
 
@@ -1148,7 +1162,7 @@ void FunctionAnalyzer::handleOptionalNamedParameters(AsmIterator& insn, arm64_re
 
 				INSN_ASSERT(insn.id() == ARM64_INS_ADD);
 				INSN_ASSERT(fnInfo->State()->GetValue(insn.ops(1).reg) == fnInfo->Vars()->ValArgsDesc());
-				INSN_ASSERT(insn.ops(2).reg == tmpReg && insn.ops(2).ext == ARM64_EXT_SXTW && insn.ops(2).shift.value == 1);
+				INSN_ASSERT(isScaledRegOperand(insn.ops(2), tmpReg, 1));
 				const auto tmpReg2 = insn.ops(0).reg;
 				++insn;
 
@@ -1351,7 +1365,7 @@ void FunctionAnalyzer::handleOptionalNamedParameters(AsmIterator& insn, arm64_re
 
 			INSN_ASSERT(insn.id() == ARM64_INS_ADD);
 			INSN_ASSERT(insn.ops(1).reg == CSREG_DART_FP);
-			INSN_ASSERT(insn.ops(2).reg == tmpReg && insn.ops(2).ext == ARM64_EXT_SXTW && insn.ops(2).shift.value == 2);
+			INSN_ASSERT(isScaledRegOperand(insn.ops(2), tmpReg, 2));
 			const auto tmpReg2 = insn.ops(0).reg;
 			++insn;
 
@@ -1595,7 +1609,7 @@ void FunctionAnalyzer::handleArgumentsDescriptorTypeArguments(AsmIterator& insn)
 
 	INSN_ASSERT(insn.id() == ARM64_INS_ADD);
 	INSN_ASSERT(insn.ops(1).reg == CSREG_DART_FP);
-	INSN_ASSERT(ToCapstoneReg(insn.ops(2).reg) == sizeReg && insn.ops(2).ext == ARM64_EXT_SXTW && insn.ops(2).shift.value == 2);
+	INSN_ASSERT(isScaledRegOperand(insn.ops(2), sizeReg, 2));
 	const auto tmpReg = insn.ops(0).reg;
 	fnInfo->State()->ClearRegister(tmpReg);
 	++insn;
@@ -2494,6 +2508,7 @@ std::unique_ptr<MoveRegInstr> FunctionAnalyzer::processMoveRegInstr(AsmIterator&
 
 std::unique_ptr<DecompressPointerInstr> FunctionAnalyzer::processDecompressPointerInstr(AsmIterator& insn)
 {
+#if defined(DART_COMPRESSED_POINTERS)
 	if (insn.id() == ARM64_INS_ADD && insn.ops(2).reg == CSREG_DART_HEAP && insn.ops(2).shift.value == 32) {
 		INSN_ASSERT(insn.ops(0).reg == insn.ops(1).reg);
 		const auto reg = A64::Register{ insn.ops(0).reg };
@@ -2501,6 +2516,7 @@ std::unique_ptr<DecompressPointerInstr> FunctionAnalyzer::processDecompressPoint
 		++insn;
 		return std::make_unique<DecompressPointerInstr>(insn.Wrap(ins0_addr), reg);
 	}
+#endif
 	return nullptr;
 }
 
@@ -3033,7 +3049,11 @@ std::unique_ptr<ILInstr> FunctionAnalyzer::processLoadFieldTableInstr(AsmIterato
 
 		INSN_ASSERT(insn.ops(1).mem.base == tmp_reg);
 		load_offset |= insn.ops(1).mem.disp;
+#if defined(DART_COMPRESSED_POINTERS)
 		const auto field_offset = load_offset >> 1;
+#else
+		const auto field_offset = load_offset;
+#endif
 
 		if (insn.id() == ARM64_INS_STR) {
 			const auto reg = A64::Register{ insn.ops(0).reg };

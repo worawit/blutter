@@ -8,11 +8,19 @@ import zlib
 from struct import unpack
 
 from elftools.elf.elffile import ELFFile
-from elftools.elf.enums import ENUM_E_MACHINE 
-from elftools.elf.sections import SymbolTableSection
 
-# TODO: support both ELF and Mach-O file
+from macho import find_dart_version, find_dart_vm_snapshot_data, find_engine_ids, is_macho_file, load_macho_image
+
+
 def extract_snapshot_hash_flags(libapp_file):
+    if is_macho_file(libapp_file):
+        image = load_macho_image(libapp_file, "arm64")
+        assert not image.is_encrypted, "Mach-O image is encrypted. Use a decrypted iOS binary."
+        data = find_dart_vm_snapshot_data(image)
+        snapshot_hash = data[20:52].decode()
+        flags = data[52:data.index(b'\0', 52)].decode().strip().split(' ')
+        return snapshot_hash, flags
+
     with open(libapp_file, 'rb') as f:
         elf = ELFFile(f)
         # find "_kDartVmSnapshotData" symbol
@@ -28,11 +36,20 @@ def extract_snapshot_hash_flags(libapp_file):
     return snapshot_hash, flags
 
 def extract_libflutter_info(libflutter_file):
+    if is_macho_file(libflutter_file):
+        image = load_macho_image(libflutter_file, "arm64")
+        assert not image.is_encrypted, "Mach-O image is encrypted. Use a decrypted iOS binary."
+        data = image.data[image.offset:image.offset + image.size]
+        engine_ids = find_engine_ids(data)
+        dart_version = find_dart_version(data)
+        assert len(engine_ids) > 0 or dart_version is not None, "Cannot find Flutter engine id or Dart version in Mach-O image"
+        return engine_ids, dart_version, image.arch, 'ios'
+
     with open(libflutter_file, 'rb') as f:
         elf = ELFFile(f)
         if elf.header.e_machine == 'EM_AARCH64': # 183
             arch = 'arm64'
-        elif elf.header.e_machine == 'EM_IA_64': # 50
+        elif elf.header.e_machine in ('EM_X86_64', 'EM_IA_64'): # 62, 50
             arch = 'x64'
         else:
             assert False, f"Unsupport architecture: {elf.header.e_machine}"
@@ -121,7 +138,6 @@ def extract_dart_info(libapp_file: str, libflutter_file: str):
         # print(dart_version)
         #assert dart_version == dart_version_sdk
     
-    # TODO: os (android or ios) and architecture (arm64 or x64)
     return dart_version, snapshot_hash, flags, arch, os_name
 
 
@@ -129,5 +145,9 @@ if __name__ == "__main__":
     libdir = sys.argv[1]
     libapp_file = os.path.join(libdir, 'libapp.so')
     libflutter_file = os.path.join(libdir, 'libflutter.so')
+    if not os.path.exists(libapp_file):
+        libapp_file = os.path.join(libdir, 'App')
+    if not os.path.exists(libflutter_file):
+        libflutter_file = os.path.join(libdir, 'Flutter')
 
     print(extract_dart_info(libapp_file, libflutter_file))

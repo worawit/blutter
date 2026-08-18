@@ -1,7 +1,7 @@
 # B(l)utter
 Flutter Mobile Application Reverse Engineering Tool by Compiling Dart AOT Runtime
 
-Currently the application supports only Android libapp.so (arm64 only).
+Currently the application supports Android libapp.so (arm64 only) and experimental iOS App.framework/App snapshot extraction (arm64).
 Also the application is currently work only against recent Dart versions.
 
 For high priority missing features, see [TODO](#todo)
@@ -53,7 +53,12 @@ Extract "lib" directory from apk file
 ```
 python3 blutter.py path/to/app/lib/arm64-v8a out_dir
 ```
-The blutter.py will automatically detect the Dart version from the flutter engine and call executable of blutter to get the information from libapp.so.
+Or pass an IPA file / extracted iOS app bundle
+```
+python3 blutter.py path/to/app.ipa out_dir
+python3 blutter.py path/to/Payload/Runner.app out_dir
+```
+The blutter.py will automatically detect the Dart version from the Flutter engine and call the blutter executable to dump the Dart AOT image.
 
 If the blutter executable for required Dart version does not exists, the script will automatically checkout Dart source code and compiling it.
 
@@ -94,5 +99,4 @@ python blutter.py path\to\lib\arm64-v8a build\vs --vs-sln
   - More internal classes
   - Object modification
 - Obfuscated app (still missing many functions)
-- Reading iOS binary
-- Input as apk or ipa
+- iOS code analysis parity
