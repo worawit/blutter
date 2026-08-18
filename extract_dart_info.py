@@ -19,7 +19,9 @@ def extract_snapshot_hash_flags(libapp_file):
         dynsym = elf.get_section_by_name('.dynsym')
         sym = dynsym.get_symbol_by_name('_kDartVmSnapshotData')[0]
         #section = elf.get_section(sym['st_shndx'])
-        assert sym['st_size'] > 128
+        # st_size may be 0 in stripped ELF files; allow it and attempt to read anyway
+        assert sym['st_size'] == 0 or sym['st_size'] > 128, \
+            f"Unexpected _kDartVmSnapshotData size: {sym['st_size']}"
         f.seek(sym['st_value']+20)
         snapshot_hash = f.read(32).decode()
         data = f.read(256) # should be enough
