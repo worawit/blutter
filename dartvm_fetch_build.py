@@ -41,7 +41,9 @@ class DartLibInfo:
         if has_compressed_ptrs is None:
             # use same as flutter default configuration
             # TODO: old Dart version has no pointer compression
-            self.has_compressed_ptrs = os_name != 'ios'
+            # Both Apple targets ship uncompressed; only the iOS case was
+            # covered here before macOS was analyzable.
+            self.has_compressed_ptrs = os_name not in ('ios', 'macos')
         else:
             self.has_compressed_ptrs = has_compressed_ptrs
         self.lib_name = f'dartvm{version}_{os_name}_{arch}'

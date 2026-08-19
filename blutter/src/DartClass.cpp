@@ -43,12 +43,16 @@ DartClass::DartClass(const DartLibrary& lib_, const dart::Class& cls) :
 	if (!dart::ClassTable::IsTopLevelCid(id)) {
 		//auto& supCls = dart::Class::Handle(zone, cls.SuperClass());
 		auto supClsPtr = cls.SuperClass();
-		
-		auto superCid = supClsPtr.untag()->id();
-		if (superCid > 0 && (intptr_t)supClsPtr == (intptr_t)dart::Object::null())
-			superCid = 0;
-		if (superCid)
-			superCls = (DartClass*)(intptr_t)superCid; // temporary save class id as pointer. it will be set correctly after all classes are loaded
+
+		// Object has no super class. Test the pointer before reading a class id
+		// out of it: the id of the null object is meaningless, and without
+		// pointer compression it reads back negative, which the previous
+		// "superCid > 0" test let through as a bogus class id.
+		if (supClsPtr != dart::Class::null()) {
+			const auto superCid = supClsPtr.untag()->id();
+			if (superCid)
+				superCls = (DartClass*)(intptr_t)superCid; // temporary save class id as pointer. it will be set correctly after all classes are loaded
+		}
 
 		if (cls.is_const())
 			is_const_constructor = true;

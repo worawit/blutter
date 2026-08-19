@@ -2,10 +2,6 @@
 #include "ElfHelper.h"
 PRAGMA_WARNING(push, 0)
 #include <platform/elf.h>
-#if defined(DART_TARGET_OS_MACOS)
-// old dart version has no mach_o.h
-//#include <platform/mach_o.h>
-#endif
 PRAGMA_WARNING(pop)
 #include <algorithm>
 #include <stdexcept>
@@ -152,24 +148,6 @@ LibAppInfo ElfHelper::MapLibAppSo(const char* path)
 	void* lib = load_map_file(path);
 	// quick and dirty parsing ELF to get symbol addresses
 	uint8_t* elf = (uint8_t*)(lib);
-#if defined(DART_TARGET_OS_MACOS)
-	// Note: only new dart version getting snapshots from load command
-	// <=2.17, use EXPORT name
-	// <= v2.18,  load from sub SEGMENT_64, named "__CUSTOM" and section named "__dart_app_snap"
-	// >= 2.19, LC_NOTE command is used
-	auto header = (dart::mach_o::mach_header_64*)lib;
-	switch (header->magic) {
-	case dart::mach_o::MH_MAGIC:
-	case dart::mach_o::MH_CIGAM:
-		throw std::invalid_argument("Mach-O: Support only 64 bits");
-	case dart::mach_o::MH_CIGAM_64:
-		throw std::invalid_argument("Mach-O: Expected a host endian header");
-	case dart::mach_o::MH_MAGIC_64:
-		return size >= sizeof(mach_o::mach_header_64);
-	default:
-		throw std::invalid_argument("Mach-O: Invalid magic header");
-	}
-#else
 	const auto* hdr = (ElfHeader*)elf;
 	const auto* ident = (ElfIdent*)hdr->ident;
 	if (memcmp(ident->ei_magic, "\x7f" "ELF", 4) != 0)
@@ -185,7 +163,6 @@ LibAppInfo ElfHelper::MapLibAppSo(const char* path)
 	//   0x3e: x86-64, 0xB7: Aarch64
 	// EM_386, EM_ARM, EM_X86_64, EM_AARCH64
 	//hdr->e_machine;
-#endif
 
 	return findSnapshots(elf);
 }

@@ -48,18 +48,36 @@ class BlutterInput:
 
 
 def find_lib_files(indir: str):
-    app_file = os.path.join(indir, 'libapp.so')
-    if not os.path.isfile(app_file):
-        app_file = os.path.join(indir, 'App')
-        if not os.path.isfile(app_file):
-            sys.exit("Cannot find libapp file")
-    
-    flutter_file = os.path.join(indir, 'libflutter.so')
-    if not os.path.isfile(flutter_file):
-        flutter_file = os.path.join(indir, 'Flutter')
-        if not os.path.isfile(flutter_file):
-            sys.exit("Cannot find libflutter file")
-    
+    # Android ships bare .so files. iOS and macOS ship frameworks, and differ:
+    # iOS puts the binary at the top of the bundle, macOS under Versions/A with
+    # a symlink at the top, and macOS names the engine framework FlutterMacOS.
+    def framework_paths(name: str):
+        bundle = f'{name}.framework'
+        return (
+            name,
+            os.path.join(bundle, name),
+            os.path.join(bundle, 'Versions', 'A', name),
+            os.path.join(bundle, 'Versions', 'Current', name),
+        )
+
+    def find_one(*candidates):
+        for candidate in candidates:
+            path = os.path.join(indir, candidate)
+            # isfile() follows symlinks, so a bundle's top-level link is fine,
+            # and a *directory* that happens to share the name is skipped
+            if os.path.isfile(path):
+                return path
+        return None
+
+    app_file = find_one('libapp.so', *framework_paths('App'))
+    if app_file is None:
+        sys.exit("Cannot find libapp file")
+
+    flutter_file = find_one(
+        'libflutter.so', *framework_paths('Flutter'), *framework_paths('FlutterMacOS'))
+    if flutter_file is None:
+        sys.exit("Cannot find libflutter file")
+
     return os.path.abspath(app_file), os.path.abspath(flutter_file)
 
 def extract_libs_from_apk(apk_file: str, out_dir: str):
