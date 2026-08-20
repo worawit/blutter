@@ -17,6 +17,7 @@ public:
 	void DumpObjects(const char* filename);
 
 	std::string ObjectToString(dart::Object& obj, bool simpleForm = false, bool nestedObj = false, int depth = 0);
+	static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::string& cls_prefix);
 
 private:
 	std::string getPoolObjectDescription(intptr_t offset, bool simpleForm = true);

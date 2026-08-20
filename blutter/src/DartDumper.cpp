@@ -25,7 +25,7 @@ static std::unordered_map<std::string, std::string> OP_MAP {
 	{ "&", "LAnd" }, { "|", "LOr" }, { "^", "xor" }, { "~", "not" }, {">>", "shar"}, {"<<", "shal"}, {">>", "shr"}
 };
 
-static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::string& cls_prefix)
+std::string DartDumper::getFunctionName4Ida(const DartFunction& dartFn, const std::string& cls_prefix)
 {
 	auto fnName = dartFn.Name();
 	if (dartFn.IsClosure() && fnName == "<anonymous closure>") {
