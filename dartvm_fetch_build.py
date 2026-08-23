@@ -58,7 +58,7 @@ def checkout_dart(info: DartLibInfo):
             os.chmod(path, stat.S_IWRITE)
             func(path)
         shutil.rmtree(clonedir, onerror=remove_readonly)
-    
+
     # clone Dart source code
     if not os.path.exists(clonedir):
         # minimum clone repository at the target branch
@@ -99,7 +99,7 @@ def checkout_dart(info: DartLibInfo):
             subprocess.run([sys.executable, 'tools/make_version.py', '--output', 'runtime/vm/version.cc', '--input', 'runtime/vm/version_in.cc'], cwd=clonedir, check=True)
         else:
             subprocess.run([sys.executable, MAKE_VERSION_FILE, clonedir, info.snapshot_hash], check=True)
-        
+
         if sys.platform == 'win32':
             # since Dart 3.8, RUNTIME_FUNCTION is declared when DART_HOST_OS_WINDOWS and TARGET_ARCH_ARM64 are set
             # patch "runtime/platform/unwinding_records.h" to remove the declaration
@@ -116,7 +116,7 @@ def checkout_dart(info: DartLibInfo):
                         pos = mm.find(b'\nstatic_assert(sizeof(')
                         if pos != -1:
                             mm[pos+1:pos+3] = b'//'
-    
+
     return clonedir
 
 def cmake_dart(info: DartLibInfo, target_dir: str):
@@ -126,15 +126,15 @@ def cmake_dart(info: DartLibInfo, target_dir: str):
     # example commit for changing cpp version https://github.com/dart-lang/sdk/commit/0a238b382891f8f3164d5ee561468e160f3c554f
     # Note: cpp20 will be used since Dart 3.7
     run_clang_tidy_file = os.path.join(target_dir, 'runtime', 'tools', 'run_clang_tidy.dart')
-    with open(run_clang_tidy_file, 'r') as f:
+    with open(run_clang_tidy_file) as f:
         content = f.read()
         pos = content.find("-std=c++")
         # Note: very old Dart, there is no '-std=c++' option in run_clang_tidy.dart
         cpp_std = "17" if pos == -1 else content[pos+8:pos+10]
-    
+
     # On windows, need developer command prompt for x64 (can check with "cl" command)
     # create dartsdk/vx.y.z/CMakefile.list
-    with open(CMAKE_TEMPLATE_FILE, 'r') as f:
+    with open(CMAKE_TEMPLATE_FILE) as f:
         code = f.read()
     with open(os.path.join(target_dir, 'CMakeLists.txt'), 'w') as f:
         f.write(code.replace('VERSION_PLACE_HOLDER', info.version).replace('CXX_STD_PLACE_HOLDER', cpp_std))
@@ -143,7 +143,7 @@ def cmake_dart(info: DartLibInfo, target_dir: str):
     with open(os.path.join(target_dir, 'Config.cmake.in'), 'w') as f:
         f.write('@PACKAGE_INIT@\n\n')
         f.write('include ( "${CMAKE_CURRENT_LIST_DIR}/dartvmTarget.cmake" )\n\n')
-    
+
     # generate source list
     subprocess.run([sys.executable, CREATE_SRCLIST_FILE, target_dir], check=True)
     # cmake -GNinja -Bout3.0.3 -DCMAKE_BUILD_TYPE=Release
@@ -152,10 +152,10 @@ def cmake_dart(info: DartLibInfo, target_dir: str):
     # Note: pointer compression feature is set from Flutter and no one change it when building app.
     #       so only one build of Dart runtime is enough
     builddir = os.path.join(BUILD_DIR, info.lib_name)
-    subprocess.run([CMAKE_CMD, '-GNinja', '-B', builddir, f'-DTARGET_OS={info.os_name}', f'-DTARGET_ARCH={info.arch}', 
-        f'-DCOMPRESSED_PTRS={1 if info.has_compressed_ptrs else 0}', '-DCMAKE_BUILD_TYPE=Release', '--log-level=NOTICE'], 
+    subprocess.run([CMAKE_CMD, '-GNinja', '-B', builddir, f'-DTARGET_OS={info.os_name}', f'-DTARGET_ARCH={info.arch}',
+        f'-DCOMPRESSED_PTRS={1 if info.has_compressed_ptrs else 0}', '-DCMAKE_BUILD_TYPE=Release', '--log-level=NOTICE'],
         cwd=target_dir, check=True)
-    
+
     # build and install dart vm library to packages directory
     subprocess.run([NINJA_CMD], cwd=builddir, check=True)
     subprocess.run([CMAKE_CMD, '--install', '.'], cwd=builddir, check=True)
