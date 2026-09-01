@@ -160,8 +160,66 @@ def cmake_dart(info: DartLibInfo, target_dir: str):
     subprocess.run([NINJA_CMD], cwd=builddir, check=True)
     subprocess.run([CMAKE_CMD, '--install', '.'], cwd=builddir, check=True)
 
+def compute_source_snapshot_hash(clonedir):
+    """Reproduce Dart's snapshot version hash from the checked-out source,
+    mirroring tools/make_version.py:MakeSnapshotHashString(). Returns the
+    32-char md5 hex, or None if it cannot be determined."""
+    import hashlib, re
+    mv_path = os.path.join(clonedir, 'tools', 'make_version.py')
+    try:
+        with open(mv_path, 'r', encoding='utf-8', errors='replace') as f:
+            mv_src = f.read()
+    except OSError:
+        return None
+    m = re.search(r'VM_SNAPSHOT_FILES\s*=\s*\[(.*?)\]', mv_src, re.DOTALL)
+    if m is None:
+        return None
+    files = re.findall(r"""['\"]([^'\"]+\.(?:cc|h))['\"]""", m.group(1))
+    if not files:
+        return None
+    md5 = hashlib.md5()
+    for fn in files:
+        fpath = os.path.join(clonedir, 'runtime', 'vm', os.path.basename(fn))
+        try:
+            with open(fpath, 'rb') as vf:
+                md5.update(vf.read())
+        except OSError:
+            return None
+    return md5.hexdigest()
+
+
+def verify_snapshot_hash(info, clonedir):
+    """Warn loudly when the checked-out Dart source does not match the snapshot
+    format of the target app. blutter selects the Dart source from the version
+    string reported by libflutter, but Flutter apps are frequently built with a
+    Dart commit whose snapshot format differs from the same-numbered dart-lang
+    release tag (beta/main channels, or a Gerrit-pinned roll). When they differ
+    the Dart VM deserializer misreads the snapshot and crashes with a SIGSEGV
+    deep in dart::ClassDeserializationCluster::ReadAlloc (issues #129, #197)."""
+    if not getattr(info, 'snapshot_hash', None):
+        return
+    src_hash = compute_source_snapshot_hash(clonedir)
+    if src_hash is None or src_hash == info.snapshot_hash:
+        return
+    line = '=' * 72
+    print(line)
+    print('WARNING: Dart snapshot-format hash mismatch')
+    print('  app (libapp.so) snapshot : ' + info.snapshot_hash)
+    print('  fetched Dart %s source : %s' % (info.version, src_hash))
+    print('  The app was NOT built with the dart-lang release tag that matches')
+    print('  its version string (%s). Flutter often pins a Dart commit' % info.version)
+    print('  (beta/main channel or a Gerrit roll) whose snapshot format differs')
+    print('  from the release tag. Building against this source will most likely')
+    print('  crash in ClassDeserializationCluster::ReadAlloc.')
+    print('  Fix: check out the exact Dart commit the app was built with')
+    print("  (from the Flutter engine's DEPS 'dart_revision') into:")
+    print('    ' + clonedir)
+    print(line)
+
+
 def fetch_and_build(info: DartLibInfo):
     outdir = checkout_dart(info)
+    verify_snapshot_hash(info, outdir)
     cmake_dart(info, outdir)
 
 if __name__ == "__main__":
