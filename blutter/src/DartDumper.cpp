@@ -96,11 +96,20 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 			for (auto dartFn : cls->Functions()) {
 				const auto ep = dartFn->Address();
 				auto name = getFunctionName4Ida(*dartFn, cls_prefix);
-				of << std::format("ida_funcs.add_func({:#x}, {:#x})\n", ep, ep + dartFn->Size());
+				const auto fnSize = dartFn->Size();
+				if (fnSize > 0) {
+					of << std::format("ida_funcs.add_func({:#x}, {:#x})\n", ep, ep + fnSize);
+				}
 				of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}\")\n", ep, lib_prefix, cls_prefix, name.c_str(), ep);
 				if (dartFn->HasMorphicCode()) {
-					of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}_miss\")\n", dartFn->PayloadAddress(), lib_prefix, cls_prefix, name.c_str(), ep);
-					of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}_check\")\n", dartFn->MonomorphicAddress(), lib_prefix, cls_prefix, name.c_str(), ep);
+					const auto payloadAddr = dartFn->PayloadAddress();
+					const auto morphicAddr = dartFn->MonomorphicAddress();
+					if (payloadAddr != 0 && payloadAddr != ep) {
+						of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}_miss\")\n", payloadAddr, lib_prefix, cls_prefix, name.c_str(), ep);
+					}
+					if (morphicAddr != 0 && morphicAddr != ep && morphicAddr != payloadAddr) {
+						of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}_check\")\n", morphicAddr, lib_prefix, cls_prefix, name.c_str(), ep);
+					}
 				}
 			}
 		}
@@ -187,9 +196,23 @@ std::vector<std::pair<intptr_t, std::string>> DartDumper::DumpStructHeaderFile(s
 		if (objType == dart::ObjectPool::EntryType::kTaggedObject) {
 			obj = pool.ObjectAt(i);
 			if (obj.IsUnlinkedCall()) {
-				const auto imm = pool.RawValueAt(i + 1);
-				auto dartFn = app.GetFunction(imm - app.base());
-				name = std::format("UnlinkedCall_{:#x}_{:#x}", offset, dartFn->Address(), offset);
+				// since Dart 3.10, target type might be kTaggedObject
+				auto unlinkTargetType = pool.TypeAt(i + 1);
+				if (unlinkTargetType == dart::ObjectPool::EntryType::kImmediate) {
+					const auto imm = pool.RawValueAt(i + 1);
+					auto dartFn = app.GetFunction(imm - app.base());
+					if (dartFn != nullptr) {
+						name = std::format("UnlinkedCall_{:#x}_{:#x}", offset, dartFn->Address(), offset);
+					}
+					else {
+						name = std::format("UnlinkedCall_{:#x}_unknown", offset);
+					}
+				}
+				else {
+					ASSERT(unlinkTargetType == dart::ObjectPool::EntryType::kTaggedObject);
+					const auto imm = pool.RawValueAt(i + 1);
+					name = std::format("UnlinkedCall_{:#x}_tagged_{:#x}", offset, imm - app.base());
+				}
 			}
 			else {
 				// TODO: more meaningful variable name
@@ -477,7 +500,11 @@ std::string DartDumper::ObjectToString(dart::Object& obj, bool simpleForm, bool 
 		return "SubtypeTestCache";
 	case dart::kFunctionCid: {
 		// stub never be in Object Pool
-		auto dartFn = app.GetFunction(dart::Function::Cast(obj).entry_point() - app.base())->AsFunction();
+		auto fnBase = app.GetFunction(dart::Function::Cast(obj).entry_point() - app.base());
+		if (fnBase == nullptr || fnBase->IsStub()) {
+			return std::format("Function: [unknown] ({:#x})", dart::Function::Cast(obj).entry_point() - app.base());
+		}
+		auto dartFn = fnBase->AsFunction();
 		if (dartFn->IsClosure()) {
 			auto parentFn = dartFn->GetOutermostFunction();
 			if (parentFn) {
@@ -789,10 +816,23 @@ std::string DartDumper::getPoolObjectDescription(intptr_t offset, bool simpleFor
 	if (objType == dart::ObjectPool::EntryType::kTaggedObject) {
 		auto& obj = dart::Object::Handle(pool.ObjectAt(idx));
 		if (obj.IsUnlinkedCall()) {
-			ASSERT(pool.TypeAt(idx + 1) == dart::ObjectPool::EntryType::kImmediate);
-			const auto imm = pool.RawValueAt(idx + 1);
-			auto dartFn = app.GetFunction(imm - app.base());
-			return std::format("[pp+{:#x}] UnlinkedCall: {:#x} - {}", offset, dartFn->Address(), dartFn->FullName().c_str());
+			// since Dart 3.10, target type might be kTaggedObject
+			auto unlinkTargetType = pool.TypeAt(idx + 1);
+			if (unlinkTargetType == dart::ObjectPool::EntryType::kImmediate) {
+				const auto imm = pool.RawValueAt(idx + 1);
+				auto dartFn = app.GetFunction(imm - app.base());
+				if (dartFn != nullptr) {
+					return std::format("[pp+{:#x}] UnlinkedCall: {:#x} - {}", offset, dartFn->Address(), dartFn->FullName().c_str());
+				}
+				else {
+					return std::format("[pp+{:#x}] UnlinkedCall: {:#x} - [unknown function]", offset, imm - app.base());
+				}
+			}
+			else {
+				ASSERT(unlinkTargetType == dart::ObjectPool::EntryType::kTaggedObject);
+				auto& obj2 = dart::Object::Handle(pool.ObjectAt(idx + 1));
+				return std::format("[pp+{:#x}] UnlinkedCall: {}", offset, ObjectToString(obj2, simpleForm));
+			}
 		}
 		return std::format("[pp+{:#x}] {}", offset, ObjectToString(obj, simpleForm));
 	}

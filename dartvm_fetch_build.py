@@ -111,16 +111,33 @@ def checkout_dart(info: DartLibInfo):
                     if pos != -1:
                         # replace "||" with "//" to comment out "!defined(HOST_ARCH_ARM64)"
                         mm[pos+36:pos+38] = b'//'
+                    else:
+                        # newer Dart version use static_assert for checking RUNTIME_FUNCTION size, comment out that line
+                        pos = mm.find(b'\nstatic_assert(sizeof(')
+                        if pos != -1:
+                            mm[pos+1:pos+3] = b'//'
     
     return clonedir
 
 def cmake_dart(info: DartLibInfo, target_dir: str):
+    # Dart 3.11.0+ requires C++20 https://github.com/dart-lang/sdk/commit/3ebbaf08fb9236023b8f37bb9e9de85a9be8e281
+    # getting default cpp standard version for Dart SDK from "runtime/tools/run_clang_tidy.dart"
+    #   because "build/config/compiler/BUILD.gn" is not fetched
+    # example commit for changing cpp version https://github.com/dart-lang/sdk/commit/0a238b382891f8f3164d5ee561468e160f3c554f
+    # Note: cpp20 will be used since Dart 3.7
+    run_clang_tidy_file = os.path.join(target_dir, 'runtime', 'tools', 'run_clang_tidy.dart')
+    with open(run_clang_tidy_file, 'r') as f:
+        content = f.read()
+        pos = content.find("-std=c++")
+        # Note: very old Dart, there is no '-std=c++' option in run_clang_tidy.dart
+        cpp_std = "17" if pos == -1 else content[pos+8:pos+10]
+    
     # On windows, need developer command prompt for x64 (can check with "cl" command)
     # create dartsdk/vx.y.z/CMakefile.list
     with open(CMAKE_TEMPLATE_FILE, 'r') as f:
         code = f.read()
     with open(os.path.join(target_dir, 'CMakeLists.txt'), 'w') as f:
-        f.write(code.replace('VERSION_PLACE_HOLDER', info.version))
+        f.write(code.replace('VERSION_PLACE_HOLDER', info.version).replace('CXX_STD_PLACE_HOLDER', cpp_std))
 
     # create dartsdk/vx.y.z/Config.cmake.in
     with open(os.path.join(target_dir, 'Config.cmake.in'), 'w') as f:

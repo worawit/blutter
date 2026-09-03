@@ -46,9 +46,8 @@ set(CMAKE_DEBUG_POSTFIX "_d")
 include(sourcelist.cmake)
 add_library(${LIBNAME} STATIC ${SRCS})
 
-# use C++17 because compilation with c++20 is slower
 set_target_properties(${LIBNAME} PROPERTIES
-	CXX_STANDARD 17
+	CXX_STANDARD CXX_STD_PLACE_HOLDER
 	CXX_STANDARD_REQUIRED True
 	CXX_VISIBILITY_PRESET hidden
 	CXX_STANDARD_REQUIRED ON

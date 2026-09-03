@@ -47,13 +47,12 @@ def extract_libflutter_info(libflutter_file):
         assert len(engine_ids) == 2, f'found hashes {", ".join(engine_ids)}'
         
         # beta/dev version of flutter might not use stable dart version (we can get dart version from sdk with found engine_id)
-        # support only stable
-        epos = data.find(b' (stable) (')
-        if epos == -1:
+        # support stable, beta and dev channels
+        m = re.search(br'\x00([\d\w\.-]+) \((stable|beta|dev)\)', data)
+        if m is None:
             dart_version = None
         else:
-            pos = data.rfind(b'\x00', 0, epos) + 1
-            dart_version = data[pos:epos].decode()
+            dart_version = m.group(1).decode()
         
     return engine_ids, dart_version, arch, 'android'
 

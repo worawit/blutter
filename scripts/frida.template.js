@@ -113,6 +113,57 @@ function getDartTypedArrayValues(ptr, cls, elementSize, readValFn) {
     return vals;
 }
 
+function getDartClosure(ptr, cls) {
+    let ep = ptr.add(cls.epOffset).readPointer();
+    let fnName = 'unknown';
+    if (libapp !== null) {
+        let offset = ep.sub(libapp);
+        fnName = 'fn_' + offset.toString(16);
+    }
+    return `Closure(${fnName})`;
+}
+
+function getDartLinkedHashData(ptr, cls, depthLeft, isMap) {
+    const usedData = ptr.add(cls.usedOffset).readU32() >> 1;
+    let arrPtr = ptr.add(cls.dataOffset);
+    let dataCls = Classes[CidArray];
+
+    if (isMap) {
+        let result = {};
+        for (let i = 0; i < usedData; i += 2) {
+            try {
+                let keyPtr = arrPtr.add(dataCls.dataOffset + i * CompressedWordSize).readPointer();
+                let valPtr = arrPtr.add(dataCls.dataOffset + (i + 1) * CompressedWordSize).readPointer();
+                const [kTptr, kCls, kVal] = getTaggedObjectValue(keyPtr, depthLeft - 1);
+                const [vTptr, vCls, vVal] = getTaggedObjectValue(valPtr, depthLeft - 1);
+                if (kCls.id === CidNull) continue;
+                let keyStr = (kCls.id === CidString || kCls.id === CidTwoByteString) ? kVal : `${kCls.name}@${kTptr.toString().slice(2)}`;
+                result[keyStr] = vVal;
+            } catch(e) { break; }
+        }
+        return result;
+    } else {
+        let items = [];
+        for (let i = 0; i < usedData; i++) {
+            try {
+                let valPtr = arrPtr.add(dataCls.dataOffset + i * CompressedWordSize).readPointer();
+                const [vTptr, vCls, vVal] = getTaggedObjectValue(valPtr, depthLeft - 1);
+                if (vCls.id === CidNull) continue;
+                items.push(vVal);
+            } catch(e) { break; }
+        }
+        return items;
+    }
+}
+
+function getDartMap(ptr, cls, depthLeft) {
+    return getDartLinkedHashData(ptr, cls, depthLeft, true);
+}
+
+function getDartSet(ptr, cls, depthLeft) {
+    return getDartLinkedHashData(ptr, cls, depthLeft, false);
+}
+
 function isFieldNative(fieldBitmap, offset) {
     const idx = offset / CompressedWordSize;
     return (fieldBitmap & (1 << idx)) !== 0;
@@ -157,6 +208,12 @@ function getObjectValue(ptr, cls, depthLeft = MaxDepth) {
         return getDartTypedArrayValues(ptr, cls, 8, (p) => p.readU64());
     case CidInt64Array:
         return getDartTypedArrayValues(ptr, cls, 8, (p) => p.readS64());
+    case CidClosure:
+        return getDartClosure(ptr, cls);
+    case CidSet:
+        return getDartSet(ptr, cls, depthLeft);
+    case CidMap:
+        return getDartMap(ptr, cls, depthLeft);
     }
 
     if (cls.id < NumPredefinedCids) {

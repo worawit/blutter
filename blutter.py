@@ -184,7 +184,17 @@ def build_and_run(input: BlutterInput):
         blutter_dir = os.path.join(SCRIPT_DIR, 'blutter')
         dbg_output_path = os.path.abspath(os.path.join(input.outdir, 'out'))
         dbg_cmd_args = f'-i {input.libapp_path} -o {dbg_output_path}'
-        subprocess.run([CMAKE_CMD, '-G', 'Visual Studio 17 2022', '-A', 'x64', '-B', input.outdir, f'-DDARTLIB={input.dart_info.lib_name}', 
+
+        vscmd_ver = os.getenv('VSCMD_VER')
+        assert vscmd_ver is not None, "Need run blutter in Visual Studio Develeper console"
+        if vscmd_ver.startswith('18.'):
+            generator = 'Visual Studio 18 2026'
+        elif vscmd_ver.startswith('17.'):
+            generator = 'Visual Studio 17 2022'
+        else:
+            assert False, "Unknown Visual Studio version"
+
+        subprocess.run([CMAKE_CMD, '-G', generator, '-A', 'x64', '-B', input.outdir, f'-DDARTLIB={input.dart_info.lib_name}', 
                         f'-DNAME_SUFFIX={input.name_suffix}', f'-DDBG_CMD:STRING={dbg_cmd_args}'] + macros + [blutter_dir], check=True)
         dbg_exe_dir = os.path.join(input.outdir, 'Debug')
         os.makedirs(dbg_exe_dir, exist_ok=True)
