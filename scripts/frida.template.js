@@ -17,19 +17,18 @@ function onLibappLoaded() {
 
 function tryLoadLibapp() {
     try {
-        libapp = Module.findBaseAddress('libapp.so');
+        // Frida >= 17.0.0: Process.getModuleByName throws if module not loaded
+        libapp = Process.getModuleByName('libapp.so').base;
     } catch (e) {
-        if (e instanceof TypeError && e.message === "not a function") {
-            libapp = Process.findModuleByName('libapp.so');
-            if (libapp != null) {
-                libapp = libapp.base;
-            }
-        } else {
-            throw e;
+        try {
+            // Frida < 17.0.0 fallback
+            libapp = Module.findBaseAddress('libapp.so');
+        } catch (e2) {
+            libapp = null;
         }
     }
     if (libapp === null)
-        setTimeout(tryLoadLibapp, 500);    
+        setTimeout(tryLoadLibapp, 500);
     else
         onLibappLoaded();
 }

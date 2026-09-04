@@ -25,6 +25,14 @@ static std::unordered_map<std::string, std::string> OP_MAP {
 	{ "&", "LAnd" }, { "|", "LOr" }, { "^", "xor" }, { "~", "not" }, {">>", "shar"}, {"<<", "shal"}, {">>", "shr"}
 };
 
+// Replace characters that IDA Pro rejects in symbol names (|, -)
+static std::string sanitizeName4Ida(std::string name) {
+	for (char& c : name) {
+		if (c == '|' || c == '-') c = '_';
+	}
+	return name;
+}
+
 static std::string getFunctionName4Ida(const DartFunction& dartFn, const std::string& cls_prefix)
 {
 	auto fnName = dartFn.Name();
@@ -86,16 +94,20 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 {
 	std::filesystem::create_directory(outDir);
 	std::ofstream of((outDir / "addNames.py").string());
+	of << "# -*- coding: utf-8 -*-\n";
 	of << "import ida_funcs\n";
-	of << "import idaapi\n\n";
+	of << "import idaapi\n";
+	of << "import idc\n\n";
 
 	for (auto lib : app.libs) {
-		std::string lib_prefix = lib->GetName();
+		const auto lib_prefix = sanitizeName4Ida(lib->GetName());
 		for (auto cls : lib->classes) {
-			std::string cls_prefix = cls->Name();
+			const std::string raw_cls_prefix = cls->Name();
+			const auto cls_prefix = sanitizeName4Ida(raw_cls_prefix);
 			for (auto dartFn : cls->Functions()) {
 				const auto ep = dartFn->Address();
-				auto name = getFunctionName4Ida(*dartFn, cls_prefix);
+				// pass raw (unsanitized) cls_prefix so constructor prefix matching still works
+				auto name = sanitizeName4Ida(getFunctionName4Ida(*dartFn, raw_cls_prefix));
 				const auto fnSize = dartFn->Size();
 				if (fnSize > 0) {
 					of << std::format("ida_funcs.add_func({:#x}, {:#x})\n", ep, ep + fnSize);
@@ -134,7 +146,6 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 	//   use header file then adding comment is much faster
 	auto comments = DumpStructHeaderFile((outDir / "ida_dart_struct.h").string());
 	of << R"CBLOCK(
-import ida_struct
 import os
 def create_Dart_structs():
 	sid1 = idc.get_struc_id("DartThread")
@@ -144,10 +155,11 @@ def create_Dart_structs():
 	idaapi.idc_parse_types(hdr_file, idc.PT_FILE)
 	sid1 = idc.import_type(-1, "DartThread")
 	sid2 = idc.import_type(-1, "DartObjectPool")
-	struc = ida_struct.get_struc(sid2)
 )CBLOCK";
+	// idc.set_member_cmt(sid, byte_offset, comment, repeatable) is unchanged in IDA 7, 8 and 9.
+	// ida_struct was removed in IDA 9 and ida_typeinf is not a drop-in replacement for it.
 	for (const auto& [offset, comment] : comments) {
-		of << "\tida_struct.set_member_cmt(ida_struct.get_member(struc, " << offset << "), '''" << comment << "''', True)\n";
+		of << "\tidc.set_member_cmt(sid2, " << offset << ", '''" << comment << "''', True)\n";
 	}
 	of << "\treturn sid1, sid2\n";
 	of << "thrs, pps = create_Dart_structs()\n";
