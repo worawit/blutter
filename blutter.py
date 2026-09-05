@@ -22,12 +22,15 @@ BUILD_DIR = os.path.join(SCRIPT_DIR, 'build')
 
 
 class BlutterInput:
-    def __init__(self, libapp_path: str, dart_info: DartLibInfo, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
+    def __init__(self, libapp_path: str, dart_info: DartLibInfo, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool, build_only: bool = False):
         self.libapp_path = libapp_path
         self.dart_info = dart_info
         self.outdir = outdir
         self.rebuild_blutter = rebuild_blutter
         self.create_vs_sln = create_vs_sln
+        # build_only: build the blutter executable (and its Dart VM library) then exit,
+        # without parsing any snapshot. Useful for CI / prebuilt binary generation.
+        self.build_only = build_only
 
         vers = dart_info.version.split('.', 2)
         if int(vers[0]) == 2 and int(vers[1]) < 15:
@@ -206,13 +209,26 @@ def build_and_run(input: BlutterInput):
             cmake_blutter(input)
             assert os.path.isfile(input.blutter_file), "Build complete but cannot find Blutter binary: " + input.blutter_file
 
-        # execute blutter    
+        if input.build_only:
+            print(f"build-only: blutter executable ready at {input.blutter_file}")
+            return
+
+        # execute blutter
         subprocess.run([input.blutter_file, '-i', input.libapp_path, '-o', input.outdir], check=True)
 
-def main_no_flutter(libapp_path: str, dart_version: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
-    version, os_name, arch = dart_version.split('_')
-    dart_info = DartLibInfo(version, os_name, arch)
-    input = BlutterInput(libapp_path, dart_info, outdir, rebuild_blutter, create_vs_sln, no_analysis)
+def main_no_flutter(libapp_path: str, dart_version: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool, build_only: bool = False):
+    # x64 support: allow "3.3.4_android_x64_no-compressed-ptrs" (suffix selects COMPRESSED_PTRS=0)
+    parts = dart_version.split('_')
+    if len(parts) == 4 and parts[3] == 'no-compressed-ptrs':
+        version, os_name, arch = parts[0], parts[1], parts[2]
+        dart_info = DartLibInfo(version, os_name, arch, has_compressed_ptrs=False)
+    elif len(parts) == 3:
+        version, os_name, arch = parts
+        dart_info = DartLibInfo(version, os_name, arch)
+    else:
+        version, os_name, arch = parts[0], parts[1], parts[2]
+        dart_info = DartLibInfo(version, os_name, arch)
+    input = BlutterInput(libapp_path, dart_info, outdir, rebuild_blutter, create_vs_sln, no_analysis, build_only)
     build_and_run(input)
     
 def main2(libapp_path: str, libflutter_path: str, outdir: str, rebuild_blutter: bool, create_vs_sln: bool, no_analysis: bool):
@@ -240,6 +256,7 @@ if __name__ == "__main__":
     parser.add_argument('--rebuild', action='store_true', default=False, help='Force rebuild the Blutter executable')
     parser.add_argument('--vs-sln', action='store_true', default=False, help='Generate Visual Studio solution at <outdir>')
     parser.add_argument('--no-analysis', action='store_true', default=False, help='Do not build with code analysis')
+    parser.add_argument('--build-only', action='store_true', default=False, help='Build the blutter executable and exit without parsing a snapshot (for CI / prebuilt binaries)')
     # rare usage scenario
     parser.add_argument('--dart-version', help='Run without libflutter (indir become libapp.so) by specify dart version such as "3.4.2_android_arm64"')
     args = parser.parse_args()
@@ -247,4 +264,4 @@ if __name__ == "__main__":
     if args.dart_version is None:
         main(args.indir, args.outdir, args.rebuild, args.vs_sln, args.no_analysis)
     else:
-        main_no_flutter(args.indir, args.dart_version, args.outdir, args.rebuild, args.vs_sln, args.no_analysis)
+        main_no_flutter(args.indir, args.dart_version, args.outdir, args.rebuild, args.vs_sln, args.no_analysis, args.build_only)
