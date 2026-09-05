@@ -159,6 +159,37 @@ def cmake_dart(info: DartLibInfo, target_dir: str):
     # build and install dart vm library to packages directory
     subprocess.run([NINJA_CMD], cwd=builddir, check=True)
     subprocess.run([CMAKE_CMD, '--install', '.'], cwd=builddir, check=True)
+    fix_icu_export_win(info)
+
+
+def fix_icu_export_win(info: DartLibInfo):
+    """Windows: make the exported dartvmTarget.cmake link against our ICU4C.
+
+    CMake's FindICU can resolve ICU_LIBRARY to the Windows SDK icuuc.lib even
+    when ICU_ROOT points at the downloaded ICU4C. The SDK ICU does not export
+    the icu_73:: symbols that the Dart VM references, so linking blutter
+    against the exported target fails with LNK2001 (19 unresolved externals).
+    Rewrite the exported INTERFACE_LINK_LIBRARIES path if it points at the SDK.
+    """
+    if os.name != 'nt':
+        return
+    external_icu = os.path.join(SCRIPT_DIR, 'external', 'icu-windows', 'lib64', 'icuuc.lib')
+    if not os.path.isfile(external_icu):
+        print(f'warning: {external_icu} not found, skip ICU export fixup (run scripts/init_env_win.py first)')
+        return
+    target_cmake = os.path.join(SCRIPT_DIR, 'packages', 'lib', 'cmake', info.lib_name, 'dartvmTarget.cmake')
+    if not os.path.isfile(target_cmake):
+        return
+    with open(target_cmake, 'r', encoding='utf-8') as f:
+        content = f.read()
+    if 'Windows Kits' not in content or 'icuuc.lib' not in content:
+        return
+    import re as _re
+    new_content = _re.sub(r'"[^"]*Windows Kits[^"]*icuuc\.lib"', f'"{external_icu}"', content)
+    if new_content != content:
+        with open(target_cmake, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        print(f'fixed ICU link in {target_cmake} -> {external_icu}')
 
 def fetch_and_build(info: DartLibInfo):
     outdir = checkout_dart(info)
