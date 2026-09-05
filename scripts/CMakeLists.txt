@@ -26,8 +26,8 @@ string(SUBSTRING ${PROJECT_NAME} 6 -1 DART_VERSION)
 if (NOT DEFINED TARGET_OS)
 	set(TARGET_OS "android")
 endif()
-if (NOT "${TARGET_OS}" MATCHES "^(android|ios)$")
-	message(FATAL_ERROR "Only android or ios platform")
+if (NOT "${TARGET_OS}" MATCHES "^(android|ios|windows)$")
+        message(FATAL_ERROR "Only android, ios or windows platform")
 endif()
 
 if (NOT DEFINED TARGET_ARCH)
@@ -54,11 +54,14 @@ set_target_properties(${LIBNAME} PROPERTIES
 	VISIBILITY_INLINES_HIDDEN ON
 	POSITION_INDEPENDENT_CODE ON)
 
-# DART_TARGET_OS_ANDROID or DART_TARGET_OS_MACOS_IOS
+# DART_TARGET_OS_ANDROID / DART_TARGET_OS_MACOS_IOS / DART_TARGET_OS_WINDOWS
 if (${TARGET_OS} STREQUAL "android")
 	set(target_os "DART_TARGET_OS_ANDROID")
 	# Note: DART_COMPRESSED_POINTERS should be from the binary
 	#set(dart_pointers "DART_COMPRESSED_POINTERS")
+elseif (${TARGET_OS} STREQUAL "windows")
+	# Windows host target (Flutter Windows desktop app snapshots)
+	set(target_os "DART_TARGET_OS_WINDOWS")
 else()
 	set(target_os "DART_TARGET_OS_MACOS_IOS")
 endif()
@@ -73,14 +76,23 @@ if (${COMPRESSED_PTRS})
 endif()
 
 # DART_TARGET_OS_WINDOWS_UWP can be used to disable unused features on Windows such as native symbols lookup, Certificate Store
-#   we never this it because we just want to load snapshot
-# DART_SHARED_LIB U_ENABLE_DYLOAD=0 U_STATIC_IMPLEMENTATION -DFORCE_INCLUDE_DISASSEMBLER
-set(defines ${target_arch} ${target_os}
-	NDEBUG DART_PRECOMPILED_RUNTIME
-	${dart_pointers} EXCLUDE_CFE_AND_KERNEL_PLATFORM
-	PRODUCT U_USING_ICU_NAMESPACE=0
-	_HAS_EXCEPTIONS=0 DART_TARGET_OS_WINDOWS_UWP
-)
+#   only for cross builds (android/ios target on windows host);
+#   a real windows target needs plain DART_TARGET_OS_WINDOWS (no UWP)
+if (${TARGET_OS} STREQUAL "windows")
+	set(defines ${target_arch} ${target_os}
+		NDEBUG DART_PRECOMPILED_RUNTIME
+		${dart_pointers} EXCLUDE_CFE_AND_KERNEL_PLATFORM
+		PRODUCT U_USING_ICU_NAMESPACE=0
+		_HAS_EXCEPTIONS=0
+	)
+else()
+	set(defines ${target_arch} ${target_os}
+		NDEBUG DART_PRECOMPILED_RUNTIME
+		${dart_pointers} EXCLUDE_CFE_AND_KERNEL_PLATFORM
+		PRODUCT U_USING_ICU_NAMESPACE=0
+		_HAS_EXCEPTIONS=0 DART_TARGET_OS_WINDOWS_UWP
+	)
+endif()
 # Dart header can detect DART_HOST_OS_xxx value
 
 if (MSVC)

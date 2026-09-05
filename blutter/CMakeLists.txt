@@ -50,6 +50,8 @@ target_precompile_headers(${BINNAME} PRIVATE "${SRCDIR}/pch.h")
 if (MSVC)
 	# for dynamic function (exception) table
 	target_link_libraries(${BINNAME} PRIVATE ntdll)
+	# dart vm windows target (native_symbol_win.cc) requires dbghelp
+	target_link_libraries(${BINNAME} PRIVATE dbghelp)
 	# remove compiler exception handler options
 	#string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 	# remove compiler RTTI option
