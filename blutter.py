@@ -135,6 +135,63 @@ def find_compat_macro(dart_version: str, no_analysis: bool):
     
     return macros
 
+def _get_msvc_env():
+    """Auto-detect Visual Studio and return an env dict with MSVC toolchain configured."""
+    # Already in a VS Developer Prompt?
+    if os.environ.get('VSCMD_VER') or shutil.which('cl'):
+        return None  # current env is fine
+
+    vcvarsall = None
+
+    # Try vswhere first
+    vswhere = os.path.join(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)'),
+                           'Microsoft Visual Studio', 'Installer', 'vswhere.exe')
+    if os.path.isfile(vswhere):
+        result = subprocess.run([vswhere, '-latest', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+                                 '-property', 'installationPath'], capture_output=True, text=True)
+        vs_path = result.stdout.strip()
+        if vs_path:
+            candidate = os.path.join(vs_path, 'VC', 'Auxiliary', 'Build', 'vcvarsall.bat')
+            if os.path.isfile(candidate):
+                vcvarsall = candidate
+
+    # Fallback: scan known locations (handles newer VS versions vswhere may miss)
+    if vcvarsall is None:
+        for base in [os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)'),
+                      os.environ.get('ProgramFiles', r'C:\Program Files')]:
+            vs_base = os.path.join(base, 'Microsoft Visual Studio')
+            if not os.path.isdir(vs_base):
+                continue
+            # Sort descending so newest version wins
+            for ver_dir in sorted(os.listdir(vs_base), reverse=True):
+                for edition in ['Enterprise', 'Professional', 'Community', 'BuildTools']:
+                    candidate = os.path.join(vs_base, ver_dir, edition, 'VC', 'Auxiliary', 'Build', 'vcvarsall.bat')
+                    if os.path.isfile(candidate):
+                        vcvarsall = candidate
+                        break
+                if vcvarsall:
+                    break
+            if vcvarsall:
+                break
+
+    if vcvarsall is None:
+        print('Warning: Visual Studio with C++ tools not found — build may fail')
+        return None
+
+    print(f'Setting up MSVC environment via {vcvarsall}')
+    result = subprocess.run(f'cmd /c ""{vcvarsall}" x64 >nul 2>&1 && set"',
+                            capture_output=True, text=True, shell=True)
+    if result.returncode != 0:
+        print('Warning: vcvarsall.bat failed')
+        return None
+
+    env = {}
+    for line in result.stdout.splitlines():
+        if '=' in line:
+            k, v = line.split('=', 1)
+            env[k] = v
+    return env
+
 def cmake_blutter(input: BlutterInput):
     blutter_dir = os.path.join(SCRIPT_DIR, 'blutter')
     builddir = os.path.join(BUILD_DIR, input.blutter_name)
@@ -147,12 +204,14 @@ def cmake_blutter(input: BlutterInput):
             llvm_path = subprocess.run(['brew', '--prefix', 'llvm@16'], capture_output=True, check=True).stdout.decode().strip()
             clang_file = os.path.join(llvm_path, 'bin', 'clang')
             my_env = {**os.environ, 'CC': clang_file, 'CXX': clang_file+'++'}
+    elif platform.system() == 'Windows':
+        my_env = _get_msvc_env()
     # cmake -GNinja -Bbuild -DCMAKE_BUILD_TYPE=Release
     subprocess.run([CMAKE_CMD, '-GNinja', '-B', builddir, f'-DDARTLIB={input.dart_info.lib_name}', f'-DNAME_SUFFIX={input.name_suffix}', '-DCMAKE_BUILD_TYPE=Release', '--log-level=NOTICE'] + macros, cwd=blutter_dir, check=True, env=my_env)
 
     # build and install blutter
-    subprocess.run([NINJA_CMD], cwd=builddir, check=True)
-    subprocess.run([CMAKE_CMD, '--install', '.'], cwd=builddir, check=True)
+    subprocess.run([NINJA_CMD], cwd=builddir, check=True, env=my_env)
+    subprocess.run([CMAKE_CMD, '--install', '.'], cwd=builddir, check=True, env=my_env)
 
 def get_dart_lib_info(libapp_path: str, libflutter_path: str) -> DartLibInfo:
     # getting dart version

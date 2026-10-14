@@ -134,7 +134,39 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 	//   use header file then adding comment is much faster
 	auto comments = DumpStructHeaderFile((outDir / "ida_dart_struct.h").string());
 	of << R"CBLOCK(
-import ida_struct
+try:
+    import ida_struct
+    _IDA9 = False
+except ImportError:
+    import ida_typeinf as _ti
+    _IDA9 = True
+    class _StructShim:
+        _pool_tif = None
+        @staticmethod
+        def get_struc(sid):
+            t = _ti.tinfo_t()
+            if t.get_type_by_tid(sid):
+                _StructShim._pool_tif = t
+                return t
+            return None
+        @staticmethod
+        def get_member(s, o):
+            return (s, o)
+        @staticmethod
+        def set_member_cmt(m, c, r):
+            t, o = m
+            if t is None: return
+            u = _ti.udm_t()
+            u.offset = o * 8
+            i = t.find_udm(u, _ti.STRMEM_OFFSET)
+            if i >= 0:
+                t.set_udm_cmt(i, c)
+        @staticmethod
+        def flush():
+            t = _StructShim._pool_tif
+            if t is not None:
+                t.set_named_type(_ti.get_idati(), 'DartObjectPool', _ti.NTF_REPLACE)
+    ida_struct = _StructShim()
 import os
 def create_Dart_structs():
 	sid1 = idc.get_struc_id("DartThread")
@@ -147,8 +179,15 @@ def create_Dart_structs():
 	struc = ida_struct.get_struc(sid2)
 )CBLOCK";
 	for (const auto& [offset, comment] : comments) {
-		of << "\tida_struct.set_member_cmt(ida_struct.get_member(struc, " << offset << "), '''" << comment << "''', True)\n";
+		std::string escaped;
+		escaped.reserve(comment.size());
+		for (char c : comment) {
+			if (c == '\\') escaped += "\\\\";
+			else escaped += c;
+		}
+		of << "\tida_struct.set_member_cmt(ida_struct.get_member(struc, " << offset << "), '''" << escaped << "''', True)\n";
 	}
+	of << "\tif _IDA9: ida_struct.flush()\n";
 	of << "\treturn sid1, sid2\n";
 	of << "thrs, pps = create_Dart_structs()\n";
 
