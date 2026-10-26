@@ -307,6 +307,12 @@ DartFunctionType* DartTypeDb::FindOrAdd(dart::FunctionTypePtr fnTypePtr)
 
 DartAbstractType* DartTypeDb::FindOrAdd(dart::AbstractTypePtr abTypePtr)
 {
+	// A null slot in a type context (e.g. an unfilled type argument) means "dynamic".
+	// In Dart 3.13 this shows up where older versions stored an explicit dynamic Type.
+	if ((intptr_t)abTypePtr == (intptr_t)dart::Object::null()) {
+		return FindOrAdd(dart::Type::DynamicType());
+	}
+
 	switch (abTypePtr.GetClassId()) {
 	case dart::kTypeCid:
 		return FindOrAdd(dart::Type::RawCast(abTypePtr));
@@ -327,7 +333,9 @@ DartAbstractType* DartTypeDb::FindOrAdd(dart::AbstractTypePtr abTypePtr)
 		return FindOrAdd(dart::FunctionType::RawCast(abTypePtr));
 	}
 	//return nullptr;
-	FATAL("Invalid abstract type");
+	const auto _cid = abTypePtr.GetClassId();
+	const auto& _cls = dart::Class::Handle(dart::IsolateGroup::Current()->class_table()->At(_cid));
+	FATAL("Invalid abstract type (cid %d, class %s)", (int)_cid, _cls.ScrubbedNameCString());
 }
 
 const DartTypeArguments* DartTypeDb::FindOrAdd(dart::TypeArgumentsPtr typeArgsPtr)

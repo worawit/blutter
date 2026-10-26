@@ -86,8 +86,13 @@ LibAppInfo ElfHelper::findSnapshots(const uint8_t* elf)
 			// we want only .dynstr for .dynsym
 			const char* strtab = (const char*)elf + section->file_offset;
 			const char* last = strtab + section->file_size;
+#ifdef BLUTTER_DART_SINGLE_SNAPSHOT
+			const char* s_first = kSnapshotDataAsmSymbol;
+			const char* s_last = s_first + strlen(kSnapshotDataAsmSymbol) + 1;
+#else
 			const char* s_first = kVmSnapshotDataAsmSymbol;
 			const char* s_last = s_first + strlen(kVmSnapshotDataAsmSymbol) + 1;
+#endif
 			//if (memmem(strtab, section->s_size, kVmSnapshotDataAsmSymbol, strlen(kVmSnapshotDataAsmSymbol))) {
 			if (std::search(strtab, last, s_first, s_last) != last) {
 				// found it
@@ -105,6 +110,38 @@ LibAppInfo ElfHelper::findSnapshots(const uint8_t* elf)
 	}
 
 	// find the required symbol addresses
+#ifdef BLUTTER_DART_SINGLE_SNAPSHOT
+	// Dart 3.13 merged the VM and isolate snapshots into a single data/text pair
+	const uint8_t* snapshot_data = nullptr;
+	const uint8_t* snapshot_text = nullptr;
+	for (; dynsym < dynsym_end; dynsym++) {
+		if (dynsym->info == 0)
+			continue;
+
+		const char* name = dynstr + dynsym->name;
+		if (strcmp(name, kSnapshotDataAsmSymbol) == 0) {
+			snapshot_data = elf + dynsym->value;
+		}
+		else if (strcmp(name, kSnapshotTextAsmSymbol) == 0) {
+			snapshot_text = elf + dynsym->value;
+		}
+	}
+
+	if (snapshot_data == nullptr)
+		throw std::invalid_argument("ELF: Cannot find Dart Snapshot Data");
+	if (snapshot_text == nullptr)
+		throw std::invalid_argument("ELF: Cannot find Dart Snapshot Text");
+
+	return LibAppInfo{
+		.lib = elf,
+		// no separate VM snapshot in this Dart version
+		.vm_snapshot_data = nullptr,
+		.vm_snapshot_instructions = nullptr,
+		// keep the old field names, the single snapshot is the isolate one
+		.isolate_snapshot_data = snapshot_data,
+		.isolate_snapshot_instructions = snapshot_text,
+	};
+#else
 	const uint8_t* vm_snapshot_data = nullptr;
 	const uint8_t* vm_snapshot_instructions = nullptr;
 	const uint8_t* isolate_snapshot_data = nullptr;
@@ -145,6 +182,7 @@ LibAppInfo ElfHelper::findSnapshots(const uint8_t* elf)
 		.isolate_snapshot_data = isolate_snapshot_data,
 		.isolate_snapshot_instructions = isolate_snapshot_instructions,
 	};
+#endif
 }
 
 LibAppInfo ElfHelper::MapLibAppSo(const char* path)
