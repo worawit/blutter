@@ -31,23 +31,32 @@ public:
 	AsmInstruction At(size_t i) { return AsmInstruction(insns + i); }
 	cs_insn* Ptr(size_t i) { return &insns[i]; }
 	size_t AtIndex(uint64_t addr) {
-		ASSERT(addr > insns->address);
+		if (count == 0)
+			return 0;
+		if (addr <= insns->address)
+			return 0;
 		// estimate index (normally 4 bytes per instruction for arm64)
 		auto idx = (addr - insns->address) / 4;
-		ASSERT(idx < count);
+		if (idx >= count)
+			idx = count - 1;
 		while (idx < count && insns[idx].address < addr)
 			++idx;
-		return idx;
+		return (idx < count) ? idx : count - 1;
 	}
 	AsmInstruction AtAddr(uint64_t addr) {
-		ASSERT(addr > insns->address);
+		if (count == 0)
+			return AsmInstruction(insns);
+		if (addr <= insns->address)
+			return AsmInstruction(insns);
 		// estimate index (normally 4 bytes per instruction for arm64)
 		auto idx = (addr - insns->address) / 4;
-		ASSERT(idx < count);
+		if (idx >= count)
+			idx = count - 1;
 		auto insn = &insns[idx];
-		while (insn->address < addr)
+		while (insn < &insns[count] && insn->address < addr)
 			++insn;
-		ASSERT(insn->address == addr);
+		if (insn >= &insns[count] || insn->address != addr)
+			return AsmInstruction(insns);
 		return AsmInstruction(insn);
 	}
 

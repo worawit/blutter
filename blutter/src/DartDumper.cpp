@@ -305,10 +305,7 @@ void DartDumper::DumpCode(const char* out_dir)
 
 	Disassembler disasmer;
 
-	for (auto dartLib : app.libs) {
-		if (dartLib->isInternal)
-			continue;
-
+	for (auto dartLib : app.DumpableLibs()) {
 		auto out_file = dartLib->CreatePath(out_dir);
 		std::ofstream of(out_file);
 		dartLib->PrintCommentInfo(of);
@@ -329,7 +326,8 @@ void DartDumper::DumpCode(const char* out_dir)
 
 #ifndef NO_CODE_ANALYSIS
 				// use as app is loaded at zero
-				if (dartFn->Size() > 0) {
+				if (dartFn->Size() > 0 && dartFn->Address() > 0 &&
+				    dartFn->Address() < (uint64_t)DartFnBase::LibSize()) {
 					auto& asmTexts = dartFn->GetAnalyzedData()->asmTexts.Data();
 					auto& il_insns = dartFn->GetAnalyzedData()->il_insns;
 					auto il_itr = il_insns.begin();
@@ -367,14 +365,14 @@ void DartDumper::DumpCode(const char* out_dir)
 							of << "    ";
 						}
 						else {
-							while ((*il_itr)->Start() < asmText.addr) {
+						while (il_itr != il_insns.end() && (*il_itr)->Start() < asmText.addr) {
 								if ((*il_itr)->Kind() != ILInstr::Unknown) {
 									of << std::format("{:#x}: {}\n", (*il_itr)->Start(), (*il_itr)->ToString());
 									of << "    // ";
 								}
 								++il_itr;
 							}
-							if ((*il_itr)->Start() == asmText.addr) {
+						if (il_itr != il_insns.end() && (*il_itr)->Start() == asmText.addr) {
 								if ((*il_itr)->Kind() != ILInstr::Unknown) {
 									of << std::format("{:#x}: {}\n", asmText.addr, (*il_itr)->ToString());
 									of << "    //     ";

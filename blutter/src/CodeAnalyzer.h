@@ -36,13 +36,19 @@ public:
 	std::vector<AsmText>& Data() { return asm_texts; }
 
 	size_t AtIndex(uint64_t addr) {
-		ASSERT(addr >= first_addr && addr <= last_addr);
+		if (asm_texts.empty())
+			return 0;
+		// the end-of-function marker sits one instruction past the last entry
+		if (addr <= first_addr)
+			return 0;
+		if (addr >= last_addr)
+			return asm_texts.size() - 1;
 		// TODO: below is specific to arm64
 		// estimate index (normally 4 bytes per instruction for arm64)
 		auto idx = (addr - first_addr) / 4;
-		while (asm_texts[idx].addr < addr)
+		while (idx < asm_texts.size() && asm_texts[idx].addr < addr)
 			++idx;
-		return idx;
+		return (idx < asm_texts.size()) ? idx : asm_texts.size() - 1;
 	}
 
 	AsmText& AtAddr(uint64_t addr) { return asm_texts[AtIndex(addr)]; }
@@ -162,11 +168,14 @@ public:
 	}
 
 	ILInstr* LastIL() {
-		return il_insns.back().get();
+		// a function body may start in the middle of a real function when its
+		// boundary was guessed, so there is not always a previous IL instruction
+		return il_insns.empty() ? nullptr : il_insns.back().get();
 	}
 
 	void RemoveLastIL() {
-		il_insns.pop_back();
+		if (!il_insns.empty())
+			il_insns.pop_back();
 	}
 
 	DartApp& app;

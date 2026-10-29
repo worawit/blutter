@@ -44,6 +44,9 @@ public:
 	explicit DartFunction(DartClass& cls, const dart::FunctionPtr ptr);
 	// for creating naked code (only used for obfuscated app)
 	explicit DartFunction(DartClass& cls, const dart::Code& code);
+	// for code recovered from the image, when the snapshot has no Function/Code
+	// object left for it
+	explicit DartFunction(DartClass& cls, uint64_t ep, int64_t size, std::string name);
 	DartFunction() = delete;
 	DartFunction(const DartFunction&) = delete;
 	DartFunction(DartFunction&&) = delete;

@@ -13,9 +13,12 @@ int main(int argc, char** argv)
 	args::Group reqGrp(parser, "Required arguments", args::Group::Validators::All);
 	args::ValueFlag<std::string> infile(reqGrp, "infile", "libapp file", { 'i', "in" });
 	args::ValueFlag<std::string> outdir(reqGrp, "outdir", "out path", { 'o', "out"});
+	args::Flag noRecover(parser, "no-recover", "Do not scan the image for code that has no Function object in the snapshot", { "no-recover" });
 
 	try {
 		parser.ParseCLI(argc, argv);
+
+		DartApp::SetRecoverAnonymousCode(!args::get(noRecover));
 
 		auto& libappPath = args::get(infile);
 

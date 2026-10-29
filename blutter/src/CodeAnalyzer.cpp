@@ -12,25 +12,42 @@ AnalyzedFnData::AnalyzedFnData(DartApp& app, DartFunction& dartFn, AsmTexts asmT
 void CodeAnalyzer::AnalyzeAll()
 {
 	Disassembler disasmer;
+	size_t skipped = 0;
 
-	for (auto lib : app.libs) {
-		if (lib->isInternal)
-			continue;
+	for (auto lib : app.DumpableLibs()) {
 		for (auto cls : lib->classes) {
 			for (auto dartFn : cls->Functions()) {
-				if (dartFn->Size() == 0)
+				if (dartFn->Size() <= 0)
+					continue;
+				if (dartFn->Address() == 0 ||
+				    dartFn->Address() >= (uint64_t)DartFnBase::LibSize())
 					continue;
 
 				// start from PayloadAddress or Address?
 				// the assemblies will be deleted after finish analysis because assembly with details consume too much memory
 				auto asm_insns = disasmer.Disasm((uint8_t*)dartFn->MemAddress(), dartFn->Size(), dartFn->Address());
+				if (asm_insns.Count() == 0) {
+					// guessed boundary does not decode cleanly, skip the body
+					dartFn->SetSize(0);
+					continue;
+				}
 
 				dartFn->SetAnalyzedData(std::make_unique<AnalyzedFnData>(app, *dartFn, convertAsm(asm_insns)));
 
-				asm2il(dartFn, asm_insns);
+				try {
+					asm2il(dartFn, asm_insns);
+				}
+				catch (std::exception& e) {
+					// one unanalysable function must not abort the whole dump
+					skipped++;
+					dartFn->SetSize(0);
+				}
 			}
 		}
 	}
+
+	if (skipped > 0)
+		fprintf(stderr, "[blutter] %zu functions skipped by analyzer\n", skipped);
 }
 
 #endif // NO_CODE_ANALYSIS

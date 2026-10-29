@@ -144,6 +144,9 @@ LibAppInfo ElfHelper::findSnapshots(const uint8_t* elf)
 		.vm_snapshot_instructions = vm_snapshot_instructions,
 		.isolate_snapshot_data = isolate_snapshot_data,
 		.isolate_snapshot_instructions = isolate_snapshot_instructions,
+		.file_size = 0,
+		.text_start = 0,
+		.text_end = 0,
 	};
 }
 
@@ -187,5 +190,27 @@ LibAppInfo ElfHelper::MapLibAppSo(const char* path)
 	//hdr->e_machine;
 #endif
 
-	return findSnapshots(elf);
+	auto info = findSnapshots(elf);
+	struct stat file_stat;
+	if (stat(path, &file_stat) == 0) {
+		info.file_size = (size_t)file_stat.st_size;
+	}
+	// remember the executable segments so callers can look for code that has no
+	// Function object left in the snapshot
+	{
+		const auto* phdr = (const ProgramHeader*)(elf + hdr->program_table_offset);
+		for (uint16_t i = 0; i < hdr->num_program_headers; i++, phdr++) {
+			if (phdr->type != ProgramHeaderType::PT_LOAD)
+				continue;
+			if ((phdr->flags & 1) == 0) // PF_X
+				continue;
+			const size_t start = (size_t)phdr->file_offset;
+			const size_t end = (size_t)(phdr->file_offset + phdr->file_size);
+			if (info.text_start == 0 || start < info.text_start)
+				info.text_start = start;
+			if (end > info.text_end)
+				info.text_end = end;
+		}
+	}
+	return info;
 }

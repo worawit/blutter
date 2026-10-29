@@ -9,6 +9,8 @@ PRAGMA_WARNING(pop)
 #include <format>
 #include <iostream> // for debugging purpose
 
+bool DartApp::recover_anonymous_code_ = true;
+
 DartApp::DartApp(const char* path) : ppool(NULL), nativeLib(0xdeadead), throwStubAddr(0)
 {
 	auto libInfo = ElfHelper::MapLibAppSo(path);
@@ -17,6 +19,8 @@ DartApp::DartApp(const char* path) : ppool(NULL), nativeLib(0xdeadead), throwStu
 	vm_snapshot_instructions = libInfo.vm_snapshot_instructions;
 	isolate_snapshot_data = libInfo.isolate_snapshot_data;
 	isolate_snapshot_instructions = libInfo.isolate_snapshot_instructions;
+	text_start_ = libInfo.text_start;
+	text_end_ = libInfo.text_end;
 
 	isolate = reinterpret_cast<dart::Isolate*>(DartLoader::Load(libInfo));
 
@@ -24,6 +28,7 @@ DartApp::DartApp(const char* path) : ppool(NULL), nativeLib(0xdeadead), throwStu
 	inScope = false;
 
 	DartFnBase::SetLibBase(base());
+	DartFnBase::SetLibSize((intptr_t)libInfo.file_size);
 
 	dartIntCid = 0;
 	dartDoubleCid = 0;
@@ -151,9 +156,28 @@ DartLibrary* DartApp::addLibrary(const dart::Library& library)
 	return lib;
 }
 
+std::vector<DartLibrary*> DartApp::DumpableLibs()
+{
+	std::vector<DartLibrary*> out;
+	for (auto lib : libs) {
+		if (!lib->isInternal)
+			out.push_back(lib);
+	}
+	// nativeLib is a member object, never owned by libs
+	if (nativeLib.topClass && !nativeLib.topClass->Functions().empty())
+		out.push_back(&nativeLib);
+	return out;
+}
+
 void DartApp::LoadInfo()
 {
 	auto ig = dart::Isolate::Current()->group();
+
+	// functions recovered from the heap carry no library; they are real app code
+	// and must be dumped as well
+	nativeLib.name = "native";
+	nativeLib.url = "native";
+	nativeLib.isInternal = false;
 
 	loadFromClassTable(ig);
 
@@ -169,6 +193,25 @@ void DartApp::LoadInfo()
 	loadFromObjectPool();
 
 	finalizeFunctionsInfo();
+
+	fixupFunctionBounds();
+
+	if (recover_anonymous_code_)
+		recoverAnonymousCode();
+
+	size_t total_fn = 0, with_body = 0;
+	for (auto lib : DumpableLibs()) {
+		for (auto cls : lib->classes) {
+			for (auto fn : cls->Functions()) {
+				total_fn++;
+				if (fn->Size() > 0)
+					with_body++;
+			}
+		}
+	}
+	fprintf(stderr, "[blutter] dumpable libraries=%zu functions=%zu with-body=%zu\n",
+	        DumpableLibs().size(), total_fn, with_body);
+	fflush(stderr);
 
 	//auto fieldTable = isolate->field_table(); //contains only sentinel, null, false, 0
 
@@ -391,6 +434,237 @@ private:
 	std::vector<dart::CodePtr>& codePtrs;
 };
 
+void DartApp::fixupFunctionBounds()
+{
+	// AOT code is laid out back to back, so a function cannot extend past the next
+	// entry point. Two problems show up in hardened builds: Function.code_ is
+	// blanked out (size unknown) and some Code objects claim a range that covers
+	// the following function. Fill in unknown sizes from the next entry point or
+	// the next "stp fp, lr, [sp, #-N]!" prologue, whichever comes first, and cut
+	// a range that runs into the next function.
+	std::vector<DartFunction*> all;
+	for (auto lib : libs) {
+		for (auto cls : lib->classes) {
+			for (auto fn : cls->Functions()) {
+				if (fn->Address() > 0 &&
+				    fn->Address() < (uint64_t)DartFnBase::LibSize())
+					all.push_back(fn);
+			}
+		}
+	}
+	if (all.empty())
+		return;
+
+	std::sort(all.begin(), all.end(), [](DartFunction* a, DartFunction* b) {
+		return a->Address() < b->Address();
+	});
+
+	constexpr int64_t kMaxGuess = 0x8000;
+	const auto lib_size = (int64_t)DartFnBase::LibSize();
+	const auto* image = (const uint8_t*)lib_base;
+	static const uint8_t kPrologue[2][4] = {
+		{ 0xfd, 0x79, 0xbf, 0xa9 },  // stp fp, lr, [sp, #-0x10]!
+		{ 0xfd, 0x7b, 0xbf, 0xa9 },  // stp fp, lr, [sp, #-0x20]!
+	};
+
+	size_t changed = 0;
+	for (size_t i = 0; i < all.size(); i++) {
+		auto fn = all[i];
+		const auto addr = (int64_t)fn->Address();
+		const auto known_size = fn->Size();
+		const auto next_entry = (i + 1 < all.size()) ? (int64_t)all[i + 1]->Address()
+		                                            : lib_size;
+		int64_t limit = known_size;
+		if (known_size <= 0) {
+			limit = (next_entry > addr) ? (next_entry - addr) : kMaxGuess;
+			if (limit > kMaxGuess)
+				limit = kMaxGuess;
+		}
+		if (limit > kMaxGuess)
+			limit = kMaxGuess;
+		if (addr + limit > lib_size)
+			limit = lib_size - addr;
+		if (limit <= 0)
+			continue;
+
+		int64_t guess = 0;
+		for (int64_t off = 4; off < limit; off += 4) {
+			const uint8_t* p = image + addr + off;
+			if (memcmp(p, kPrologue[0], 4) == 0 ||
+			    memcmp(p, kPrologue[1], 4) == 0) {
+				guess = off;
+				break;
+			}
+		}
+		if (known_size <= 0) {
+			if (guess <= 0)
+				guess = limit;
+			if (guess > 0) {
+				fn->SetSize(guess);
+				changed++;
+			}
+		}
+		else if (next_entry > addr && addr + known_size > next_entry) {
+			// the Code object claims a range that covers the following function;
+			// well formed snapshots never get here
+			const auto bounded = (guess > 0) ? guess : (next_entry - addr);
+			if (bounded > 0 && bounded < known_size) {
+				fn->SetSize(bounded);
+				changed++;
+			}
+		}
+	}
+
+	fprintf(stderr, "[blutter] fixed bounds of %zu functions (%zu candidates)\n",
+	        changed, all.size());
+	fflush(stderr);
+}
+
+void DartApp::recoverAnonymousCode()
+{
+	// Hardened AOT builds can drop the Function/Code objects of app code from the
+	// snapshot, leaving machine code that nothing points at. Such code is found
+	// again by scanning the executable segments for function prologues that are
+	// not covered by any known function.
+	if (text_start_ == 0 || text_end_ <= text_start_)
+		return;
+
+	std::vector<std::pair<uint64_t, uint64_t>> known;
+	std::vector<uint64_t> starts;
+	auto add_fn = [&known, &starts](DartFnBase* fn) {
+		const auto addr = fn->Address();
+		if (addr == 0)
+			return;
+		starts.push_back(addr);
+		const auto size = fn->Size();
+		if (size > 0) {
+			known.emplace_back(addr, addr + (uint64_t)size);
+		}
+	};
+	for (auto lib : libs) {
+		for (auto cls : lib->classes) {
+			for (auto fn : cls->Functions())
+				add_fn(fn);
+		}
+	}
+	if (nativeLib.topClass) {
+		for (auto fn : nativeLib.topClass->Functions())
+			add_fn(fn);
+	}
+	// stubs are not used as coverage here: several stubs can be packed into one
+	// Code object, so their reported range can swallow app code that follows
+	// them. Code inside a stub has its own prologue and is recovered as usual.
+
+	std::sort(known.begin(), known.end());
+	std::vector<std::pair<uint64_t, uint64_t>> spans;
+	for (auto& r : known) {
+		if (!spans.empty() && r.first <= spans.back().second)
+			spans.back().second = std::max(spans.back().second, r.second);
+		else
+			spans.push_back(r);
+	}
+	auto is_covered = [&spans](uint64_t addr) {
+		auto it = std::upper_bound(spans.begin(), spans.end(), addr,
+			[](uint64_t a, const std::pair<uint64_t, uint64_t>& r) { return a < r.first; });
+		if (it == spans.begin())
+			return false;
+		--it;
+		return addr >= it->first && addr < it->second;
+	};
+
+	static const uint8_t kPrologue[2][4] = {
+		{ 0xfd, 0x79, 0xbf, 0xa9 },  // stp fp, lr, [sp, #-0x10]!
+		{ 0xfd, 0x7b, 0xbf, 0xa9 },  // stp fp, lr, [sp, #-0x20]!
+	};
+	const auto* image = (const uint8_t*)lib_base;
+	std::vector<uint64_t> cands;
+	for (uint64_t addr = text_start_; addr + 4 <= text_end_; addr += 4) {
+		const auto* p = image + addr;
+		if (memcmp(p, kPrologue[0], 4) != 0 && memcmp(p, kPrologue[1], 4) != 0)
+			continue;
+		if (is_covered(addr))
+			continue;
+		cands.push_back(addr);
+	}
+
+	// Leaf functions have no frame prologue, so the scan above misses them. Their
+	// callers still branch straight to the entry, so BL / B targets seed the rest.
+	// Targets inside a stub are skipped: several stubs can share one Code object
+	// and their reported range covers unrelated code.
+	std::vector<std::pair<uint64_t, uint64_t>> stub_spans;
+	for (auto& [_, stub] : stubs) {
+		if (stub->Size() > 0)
+			stub_spans.emplace_back(stub->Address(), stub->Address() + (uint64_t)stub->Size());
+	}
+	std::sort(stub_spans.begin(), stub_spans.end());
+	auto in_any = [](const std::vector<std::pair<uint64_t, uint64_t>>& list, uint64_t addr) {
+		auto it = std::upper_bound(list.begin(), list.end(), addr,
+			[](uint64_t a, const std::pair<uint64_t, uint64_t>& r) { return a < r.first; });
+		if (it == list.begin())
+			return false;
+		--it;
+		return addr >= it->first && addr < it->second;
+	};
+	for (uint64_t addr = text_start_; addr + 4 <= text_end_; addr += 4) {
+		const uint32_t insn = *(const uint32_t*)(image + addr);
+		if ((insn & 0xfc000000) != 0x94000000 && (insn & 0xfc000000) != 0x14000000)
+			continue;
+		const auto rel = ((int64_t)(int32_t)(insn << 6)) >> 6;
+		const auto target = (int64_t)addr + (rel << 2);
+		if (target < (int64_t)text_start_ || target >= (int64_t)text_end_)
+			continue;
+		if (is_covered((uint64_t)target) || in_any(stub_spans, (uint64_t)target))
+			continue;
+		cands.push_back((uint64_t)target);
+	}
+	std::sort(cands.begin(), cands.end());
+	cands.erase(std::unique(cands.begin(), cands.end()), cands.end());
+	if (cands.empty())
+		return;
+
+	std::vector<uint64_t> bounds = starts;
+	bounds.insert(bounds.end(), cands.begin(), cands.end());
+	std::sort(bounds.begin(), bounds.end());
+	bounds.erase(std::unique(bounds.begin(), bounds.end()), bounds.end());
+
+	// one synthetic library per 64KB of code to keep the dumped files readable
+	std::unordered_map<uint64_t, DartClass*> chunks;
+	size_t created = 0;
+	constexpr uint64_t kChunkShift = 16;
+	constexpr uint64_t kMaxBody = 0x8000;
+	for (auto addr : cands) {
+		auto it = std::upper_bound(bounds.begin(), bounds.end(), addr);
+		uint64_t end = (it != bounds.end()) ? *it : (uint64_t)text_end_;
+		if (end <= addr)
+			continue;
+		if (end - addr > kMaxBody)
+			end = addr + kMaxBody;
+
+		const auto chunk = addr >> kChunkShift;
+		auto chunkIt = chunks.find(chunk);
+		if (chunkIt == chunks.end()) {
+			auto lib = new DartLibrary((intptr_t)(0x5ec00000 + chunk));
+			lib->name = std::format("recovered_{:x}", chunk);
+			lib->url = lib->name;
+			lib->isInternal = false;
+			auto cls = new DartClass(*lib);
+			lib->topClass = cls;
+			lib->classes.push_back(cls);
+			libs.push_back(lib);
+			chunkIt = chunks.emplace(chunk, cls).first;
+		}
+		auto fn = new DartFunction(*chunkIt->second, addr, (int64_t)(end - addr),
+			std::format("sub_{:x}", addr));
+		chunkIt->second->Functions().push_back(fn);
+		functions[addr] = fn;
+		created++;
+	}
+
+	fprintf(stderr, "[blutter] recovered %zu functions from %.1f MB of unattributed code\n",
+	        created, (double)(text_end_ - text_start_) / 1024.0 / 1024.0);
+	fflush(stderr);
+}
+
 void DartApp::findFunctionInHeap()
 {
 	std::vector<dart::CodePtr> codePtrs;
@@ -495,6 +769,7 @@ void DartApp::findFunctionInHeap()
 				// no function, can only make it into top class of native library
 				if (!nativeLib.topClass) {
 					nativeLib.topClass = new DartClass(nativeLib);
+					nativeLib.classes.push_back(nativeLib.topClass);
 				}
 				auto dartFn = nativeLib.topClass->AddFunction(code);
 				functions[dartFn->Address()] = dartFn;
