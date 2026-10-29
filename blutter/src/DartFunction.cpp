@@ -10,6 +10,7 @@
 
 // place static member because no DartFnBase source file
 intptr_t DartFnBase::lib_base;
+intptr_t DartFnBase::lib_size = 0;
 
 DartFunction::DartFunction(DartClass& cls, const dart::FunctionPtr ptr) : DartFnBase(), cls(cls), parent(nullptr), ptr(ptr), kind(NORMAL)
 {
@@ -78,9 +79,27 @@ DartFunction::DartFunction(DartClass& cls, const dart::FunctionPtr ptr) : DartFn
 		morphic_addr -= lib_base;
 	size = code.Size();
 	ep_addr = code.EntryPoint() - lib_base;
-	if (ep != ep_addr) {
-		ep_addr = ep;
-		//std::cout << std::format("Fn: {}, payload: {:#x}, ep_addr: {:#x}, ep: {:#x}\n", name.c_str(), payload_addr, ep_addr, ep);
+	// Only offsets inside the mapped library are usable; a negative offset here
+	// means the address belongs to another module (or is a sentinel).
+	const auto raw_ep_valid = ep > 0 && ep < LibSize();
+	const auto code_ep = (intptr_t)code.EntryPoint() - lib_base;
+	const auto code_ep_valid = code_ep > 0 && code_ep < LibSize();
+	if (raw_ep_valid) {
+		// Hardened builds blank out Function.code_ so that every function points
+		// at the same empty Code object, while Function.entry_point_ still holds
+		// the real code address in the image. Fall back to the raw entry point
+		// and derive the size later from neighbouring entry points.
+		ep_addr = (uint64_t)ep;
+		payload_addr = (uint64_t)ep;
+		if (size <= 0)
+			size = 0;
+	}
+	else if (code_ep_valid) {
+		ep_addr = (uint64_t)code_ep;
+	}
+	else {
+		ep_addr = 0;
+		size = 0;
 	}
 
 	//if (ep_addr != payload_addr) {
@@ -122,7 +141,20 @@ DartFunction::DartFunction(DartClass& cls, const dart::Code& code)
 		morphic_addr -= lib_base;
 	size = code.Size();
 	ep_addr = code.EntryPoint() - lib_base;
-	name = "__unknown_function__";
+	// the Function object that owned this Code was stripped from the snapshot,
+	// so fall back to the name of the machine code entry
+	name = std::format("sub_{:x}", ep_addr);
+}
+
+DartFunction::DartFunction(DartClass& cls, uint64_t ep, int64_t size, std::string name)
+	: DartFnBase(), cls(cls), parent(nullptr), ptr(dart::Function::null()), kind(NORMAL),
+	is_native(false), is_closure(false), is_ffi(false), is_static(false), is_const(false), is_abstract(false), is_async(false)
+{
+	ep_addr = ep;
+	payload_addr = ep;
+	morphic_addr = ep;
+	this->size = size;
+	this->name = std::move(name);
 }
 
 std::string DartFunction::FullName() const
@@ -196,6 +228,13 @@ std::string DartFunction::ToCallStatement(const std::vector<std::shared_ptr<VarI
 void DartFunction::PrintHead(std::ostream& of) const
 {
 	//of << std::format("    {} /* addr: {:#x}, size: {:#x} */\n", func.ToCString(), ep, code_size);
+	if ((intptr_t)ptr == (intptr_t)dart::Function::null()) {
+		// code recovered from the image: no Function object (and no signature)
+		// exists in the snapshot
+		of << "  _ " << name << "(/* no info */) {\n";
+		of << std::format("    // ** addr: {:#x}, size: {:#x}\n", ep_addr, size);
+		return;
+	}
 	auto zone = dart::Thread::Current()->zone();
 	auto& func = dart::Function::Handle(zone, ptr);
 

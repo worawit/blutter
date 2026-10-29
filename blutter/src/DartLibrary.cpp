@@ -67,10 +67,13 @@ std::string DartLibrary::GetName()
 		offset = url.rfind('/', offset - 1);
 		out = url.substr(offset + 1);
 	}
-	else {
-		// expect "dart:*"
+	else if (url.starts_with("dart:")) {
 		out = url;
 		out[4] = '_';
+	}
+	else {
+		// synthetic library such as "native"
+		out = url.empty() ? std::format("lib_{}", id) : url;
 	}
 
 	if (out.ends_with(".dart"))
@@ -107,7 +110,13 @@ std::string DartLibrary::CreatePath(const char* base_dir)
 	else {
 		// obfuscated
 		ASSERT(url.find('/') == -1);
-		return path.append(url).append(".dart");
+		// names are obfuscated and can repeat between libraries; keep each
+		// library in its own file instead of overwriting the previous one
+		std::string file = path + url + ".dart";
+		for (uint32_t n = 0; std::filesystem::exists(file); n++)
+			file = std::format("{}{}_{}{}.dart", path, url.empty() ? "lib" : url, id,
+			                   n == 0 ? "" : std::format("_{}", n));
+		return file;
 	}
 	const char* lib_path = &url[start_pos]; // skip directory name
 	const char* end = strrchr(lib_path, '/');

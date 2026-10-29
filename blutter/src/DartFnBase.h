@@ -13,6 +13,9 @@ public:
 	// because the Dart code and global data are independent (access through Object Pool)
 	// so we can set a code address to be as if the library is loaded at 0 (to be same for every run)
 	static void SetLibBase(intptr_t addr) { lib_base = addr; }
+	// Size of the mapped libapp.so; used to validate raw entry point offsets
+	static void SetLibSize(intptr_t size) { lib_size = size; }
+	static intptr_t LibSize() { return lib_size; }
 
 	DartFnBase(const DartFnBase&) = default;
 	DartFnBase(DartFnBase&&) = delete;
@@ -22,6 +25,7 @@ public:
 	uint64_t Address() const { return ep_addr; }
 	uint64_t MemAddress() const { return ep_addr + lib_base; }
 	virtual int64_t Size() const { return size; }
+	void SetSize(int64_t s) { size = s; }
 	virtual uint64_t AddressEnd() const { return ep_addr + Size(); }
 	bool ContainsAddress(uint64_t addr) { return addr >= Address() && addr < AddressEnd(); }
 
@@ -43,4 +47,5 @@ protected:
 	std::string name;
 
 	static intptr_t lib_base;
+	static intptr_t lib_size;
 };

@@ -31,6 +31,14 @@ public:
 	intptr_t DartIntCid() const { return dartIntCid; }
 	intptr_t DartFutureCid() const { return dartFutureCid; }
 
+	// libraries that should be analysed and dumped: every non-internal library
+	// plus the synthetic library holding functions recovered from the heap
+	std::vector<DartLibrary*> DumpableLibs();
+
+	// scan the image for code that has no Function/Code object left in the
+	// snapshot (off by default only for debugging, it is always safe to run)
+	static void SetRecoverAnonymousCode(bool enable) { recover_anonymous_code_ = enable; }
+
 private:
 	DartLibrary* addLibraryClass(const dart::Library& library, const dart::Class& cls);
 	DartLibrary* addLibrary(const dart::Library& library);
@@ -40,6 +48,8 @@ private:
 	void addFunction(uintptr_t ep_addr, const dart::Function& func);
 	void findFunctionInHeap();
 	void finalizeFunctionsInfo();
+	void fixupFunctionBounds();
+	void recoverAnonymousCode();
 	void loadFromObjectPool();
 	void walkObject(dart::Object& obj); // to check field types from existed object
 
@@ -48,6 +58,11 @@ private:
 	const uint8_t* vm_snapshot_instructions;
 	const uint8_t* isolate_snapshot_data;
 	const uint8_t* isolate_snapshot_instructions;
+
+	size_t text_start_;
+	size_t text_end_;
+
+	static bool recover_anonymous_code_;
 
 	dart::Isolate* isolate;
 	uintptr_t heap_base_;

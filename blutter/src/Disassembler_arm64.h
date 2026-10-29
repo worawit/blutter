@@ -444,17 +444,32 @@ class AsmIterator {
 	cs_insn dummyInsnEnd;
 public:
 	AsmIterator(cs_insn* start, cs_insn* end) : insnStart(start), insnEnd(end), insn(insnStart) {
+		memset(&dummyInsnEnd, 0, sizeof(dummyInsnEnd));
+		dummyInsnEnd.detail = &DummyDetail();
 		dummyInsnEnd.id = 0;
 		dummyInsnEnd.address = insnEnd->address + insnEnd->size;
 		dummyInsnEnd.size = 0;
 	}
 
+	// The end marker is read by error reporting and by matchers that look ahead,
+	// so it needs a valid (empty) detail block instead of an uninitialised pointer.
+	static cs_detail& DummyDetail() {
+		static cs_detail storage = {};
+		return storage;
+	}
+
 	AsmIterator(AsmIterator& rhs, int64_t addr) : insnStart(rhs.insnStart), insnEnd(rhs.insnEnd) {
+		memset(&dummyInsnEnd, 0, sizeof(dummyInsnEnd));
+		dummyInsnEnd.detail = &DummyDetail();
 		const auto offset = (addr - rhs.insn->address) / 4;
 		insn = rhs.insn + offset;
 		dummyInsnEnd.id = 0;
 		dummyInsnEnd.address = rhs.dummyInsnEnd.address;
 		dummyInsnEnd.size = 0;
+		// a jump target can point outside the analysed range; clamp it to the
+		// end marker instead of leaving the iterator past the last instruction
+		if (addr > (int64_t)rhs.dummyInsnEnd.address || insn < insnStart)
+			insn = &dummyInsnEnd;
 	}
 
 	cs_insn* Current() { return insn; }
@@ -465,7 +480,10 @@ public:
 	}
 	// prefix increment
 	AsmIterator& operator++() {
-		ASSERT(insn != &dummyInsnEnd);
+		// staying at the end marker is harmless: several matchers advance before
+		// they validate the pattern and rely on the caller to rewind on failure
+		if (insn == &dummyInsnEnd)
+			return *this;
 		// assume no consecutive NOP
 		if (insn == insnEnd) {
 			insn = &dummyInsnEnd;

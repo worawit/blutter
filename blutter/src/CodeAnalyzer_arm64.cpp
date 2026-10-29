@@ -394,7 +394,7 @@ FunctionAnalyzer::ObjectPoolInstr FunctionAnalyzer::getObjectPoolInstruction(Asm
 				val = false;
 			}
 			else {
-				FATAL("add from NULL_REG");
+				throw InsnException("add from NULL_REG", insn);
 			}
 			auto b = new VarBoolean(val);
 			setAsmTextDataBoolean(marker.Take(), val);
@@ -481,12 +481,29 @@ FunctionAnalyzer::ObjectPoolInstr FunctionAnalyzer::getObjectPoolInstruction(Asm
 
 void FunctionAnalyzer::printInsnException(InsnException& e)
 {
+	// guessing function boundaries produces many of these on hardened builds;
+	// keep the log readable instead of printing every single one
+	static size_t printed = 0;
+	if (printed >= 200) {
+		printed++;
+		return;
+	}
+	printed++;
 	std::cerr << "Analysis error at line " << e.location.line()
 		<< " `" << e.location.function_name() << "`: " << e.cond << '\n';
 	const uint64_t fn_addr = fnInfo->dartFn.Address();
 
+	// the failing instruction can be the end marker of the function (a matcher
+	// may look one instruction ahead), which lives outside of the instruction
+	// array. Only walk over real instructions of this function.
+	auto* const first = asm_insns.FirstPtr();
+	auto* const last = asm_insns.LastPtr();
 	auto ins = e.insn;
-	for (int i = 0; ins->address > fn_addr && i < 4; i++) {
+	if (ins < first || ins > last) {
+		std::cerr << std::format("  * {:#x}: (end of function)\n", ins->address);
+		return;
+	}
+	for (int i = 0; ins > first && ins->address > fn_addr && i < 4; i++) {
 		--ins;
 	}
 	while (ins != e.insn) {
@@ -494,7 +511,7 @@ void FunctionAnalyzer::printInsnException(InsnException& e)
 		++ins;
 	}
 	std::cerr << std::format("  * {:#x}: {} {}\n", ins->address, &ins->mnemonic[0], &ins->op_str[0]);
-	if (ins->address + ins->size < fnInfo->dartFn.AddressEnd()) {
+	if (ins < last && ins->address + ins->size < fnInfo->dartFn.AddressEnd()) {
 		++ins;
 		std::cerr << std::format("    {:#x}: {} {}\n", ins->address, &ins->mnemonic[0], &ins->op_str[0]);
 	}
@@ -595,7 +612,8 @@ std::unique_ptr<CallLeafRuntimeInstr> FunctionAnalyzer::processCallLeafRuntime(A
 		// previous IL must be EnterFrame
 		//INSN_ASSERT(fnInfo->LastIL()->Kind() == ILInstr::EnterFrame);
 		// TODO: THR::call_native_through_safepoint_entry_point case and merge AllocStack IL to EnterFrame IL
-		if (fnInfo->LastIL()->Kind() == ILInstr::EnterFrame) {
+		auto lastIL = fnInfo->LastIL();
+		if (lastIL && lastIL->Kind() == ILInstr::EnterFrame) {
 			InsnMarker marker(insn);
 			++insn;
 			// LeafRuntimeScope::Call()
@@ -1090,7 +1108,7 @@ void FunctionAnalyzer::handleOptionalPositionalParameters(AsmIterator& insn, arm
 				++insn;
 			}
 			else {
-				FATAL("unexpected instruction");
+				throw InsnException("unexpected instruction in optional parameter setup", insn);
 			}
 		}
 
@@ -2435,7 +2453,7 @@ std::unique_ptr<ClosureCallInstr> FunctionAnalyzer::processClosureCallInstr(AsmI
 	if (insn.id() == ARM64_INS_LDUR && insn.ops(0).reg == ARM64_REG_X2 && insn.ops(1).mem.base == ARM64_REG_X0 && insn.ops(1).mem.disp == AOT_Closure_entry_point_offset - dart::kHeapObjectTag) {
 		// previous IL must be Load from PP and it is list for ArgumentDescriptor and dstReg is R4
 		auto il = fnInfo->LastIL();
-		if (il->Kind() == ILInstr::LoadValue) {
+		if (il && il->Kind() == ILInstr::LoadValue) {
 			auto loadIL = reinterpret_cast<LoadValueInstr*>(il);
 			if (loadIL->dstReg == A64::Register{ dart::ARGS_DESC_REG } && loadIL->val.ValueTypeId() == dart::kArrayCid) {
 				const auto& arr = dart::Array::Handle(loadIL->val.Get<VarArray>()->ptr);
@@ -2537,7 +2555,7 @@ std::unique_ptr<InitAsyncInstr> FunctionAnalyzer::processInitAsyncInstr(AsmItera
 		if (fn && fn->IsStub()) {
 			const auto stub = fn->AsStub();
 			auto il = fnInfo->LastIL();
-			if (stub->kind == DartStub::InitAsyncStub && il->Kind() == ILInstr::LoadValue) {
+			if (stub->kind == DartStub::InitAsyncStub && il && il->Kind() == ILInstr::LoadValue) {
 				auto ilLoad = reinterpret_cast<LoadValueInstr*>(il);
 				INSN_ASSERT(ilLoad->dstReg == A64::Register::R0);
 				auto& item = ilLoad->GetValue();
@@ -2630,6 +2648,7 @@ std::unique_ptr<GdtCallInstr> FunctionAnalyzer::processGdtCallInstr(AsmIterator&
 			INSN_ASSERT(insn.ops(2).type == ARM64_OP_REG && insn.ops(2).reg == CSREG_DART_TMP2);
 
 			auto il_loadImm = reinterpret_cast<LoadValueInstr*>(fnInfo->LastIL());
+			INSN_ASSERT(il_loadImm != nullptr);
 			INSN_ASSERT(il_loadImm->val.Storage().IsImmediate());
 			INSN_ASSERT(il_loadImm->dstReg == A64::TMP2_REG);
 			offset = il_loadImm->val.Get<VarInteger>()->Value();
@@ -2831,8 +2850,11 @@ std::unique_ptr<LoadTaggedClassIdMayBeSmiInstr> FunctionAnalyzer::processLoadTag
 	//   cidReg = LoadClassIdInstr(objReg)
 	//   lsl  cidReg, cidReg, #1
 	// branchAddr:
+	if (insn.id() != ARM64_INS_LSL || insn.ops(0).reg != insn.ops(1).reg ||
+	    insn.ops(2).imm != dart::kSmiTagSize || fnInfo->il_insns.size() < 3)
+		return nullptr;
 	auto& il = fnInfo->il_insns.back();
-	if (insn.id() == ARM64_INS_LSL && insn.ops(0).reg == insn.ops(1).reg && insn.ops(2).imm == dart::kSmiTagSize && il->Kind() == ILInstr::LoadClassId && fnInfo->il_insns.size() >= 3) {
+	if (il->Kind() == ILInstr::LoadClassId) {
 		auto il_loadClassId = reinterpret_cast<LoadClassIdInstr*>(il.get());
 		if (il_loadClassId->cidReg == A64::Register{ insn.ops(0).reg }) {
 			auto& il2 = fnInfo->il_insns[fnInfo->il_insns.size() - 2];
@@ -3028,7 +3050,7 @@ std::unique_ptr<ILInstr> FunctionAnalyzer::processLoadFieldTableInstr(AsmIterato
 		}
 
 		if (insn.id() != ARM64_INS_STR && insn.id() != ARM64_INS_LDR) {
-			FATAL("static field without STR or LDR");
+			throw InsnException("static field without STR or LDR", insn);
 		}
 
 		INSN_ASSERT(insn.ops(1).mem.base == tmp_reg);
@@ -3610,7 +3632,15 @@ void FunctionAnalyzer::asm2il()
 	handlePrologue(insn, fnInfo->asmTexts.FirstStackLimitAddress());
 
 	do {
+		if (insn.IsEnd())
+			break;
 		bool ok = false;
+		// Matchers advance the iterator before verifying the pattern (e.g.
+		// processLoadClassIdInstr checks LDUR then asserts the following UBFX)
+		// and most of them have no InsnMarker to rewind on failure. Restore the
+		// start position here so a rejected match cannot leave the iterator on
+		// the end marker (or past it).
+		cs_insn* const matchStart = insn.Current();
 		try {
 			for (auto matcher : matcherFns) {
 				auto il = std::invoke(matcher, this, insn);
@@ -3623,6 +3653,7 @@ void FunctionAnalyzer::asm2il()
 		}
 		catch (InsnException& e) {
 			printInsnException(e);
+			insn.SetCurrent(matchStart);
 		}
 
 		if (!ok) {
@@ -3637,7 +3668,21 @@ void FunctionAnalyzer::asm2il()
 void CodeAnalyzer::asm2il(DartFunction* dartFn, AsmInstructions& asm_insns)
 {
 	FunctionAnalyzer analyzer{ dartFn->GetAnalyzedData(), dartFn, asm_insns, app };
-	analyzer.asm2il();
+	try {
+		analyzer.asm2il();
+	}
+	catch (InsnException&) {
+		// the prologue could not be recognised (wrong boundary guess for a
+		// function whose Code object was stripped); drop the body instead of
+		// aborting the whole run
+		dartFn->SetSize(0);
+	}
+	catch (std::exception& e) {
+		fprintf(stderr, "[blutter] skip %s @ %#lx: %s\n", dartFn->Name().c_str(),
+		        (unsigned long)dartFn->Address(), e.what());
+		fflush(stderr);
+		dartFn->SetSize(0);
+	}
 }
 	
 AsmTexts CodeAnalyzer::convertAsm(AsmInstructions& asm_insns)
