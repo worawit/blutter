@@ -1,0 +1,20 @@
+diff --git a/runtime/vm/app_snapshot.cc b/runtime/vm/app_snapshot.cc
+index 5de7084a..09e469b2 100644
+--- a/runtime/vm/app_snapshot.cc
++++ b/runtime/vm/app_snapshot.cc
+@@ -1084,8 +1084,14 @@ class ClassDeserializationCluster : public DeserializationCluster {
+   ~ClassDeserializationCluster() {}
+ 
+   void ReadAlloc(Deserializer* d) override {
++    intptr_t predefined_count = d->ReadUnsigned();
++    // Some VM builds (modular/dynamic-module capable builds) serialize the size
++    // of the class table before the number of predefined classes.
++    if (predefined_count > kNumPredefinedCids) {
++      predefined_count = d->ReadUnsigned();
++    }
+     predefined_start_index_ = d->next_index();
+-    intptr_t count = d->ReadUnsigned();
++    intptr_t count = predefined_count;
+     ClassTable* table = d->isolate_group()->class_table();
+     for (intptr_t i = 0; i < count; i++) {
+       intptr_t class_id = d->ReadCid();

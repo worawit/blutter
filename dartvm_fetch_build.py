@@ -14,6 +14,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CMAKE_TEMPLATE_FILE = os.path.join(SCRIPT_DIR, 'scripts', 'CMakeLists.txt')
 CREATE_SRCLIST_FILE = os.path.join(SCRIPT_DIR, 'scripts', 'dartvm_create_srclist.py')
 MAKE_VERSION_FILE = os.path.join(SCRIPT_DIR, 'scripts', 'dartvm_make_version.py')
+PATCH_DIR = os.path.join(SCRIPT_DIR, 'scripts', 'dartvm_patches')
 
 SDK_DIR = os.path.join(SCRIPT_DIR, 'dartsdk')
 BUILD_DIR = os.path.join(SCRIPT_DIR, 'build')
@@ -117,7 +118,30 @@ def checkout_dart(info: DartLibInfo):
                         if pos != -1:
                             mm[pos+1:pos+3] = b'//'
     
+    apply_dartvm_patches(info, clonedir)
     return clonedir
+
+def patch_applies_to(patch_name: str, version: str):
+    # patch file names look like "v3.11-short-description.patch" where "v3.11"
+    # selects the Dart versions the patch is meant for
+    if not patch_name.startswith('v') or not patch_name.endswith('.patch'):
+        return False
+    selector = patch_name[1:-len('.patch')].split('-', 1)[0]
+    return version == selector or version.startswith(selector + '.')
+
+def apply_dartvm_patches(info: DartLibInfo, clonedir: str):
+    if not os.path.isdir(PATCH_DIR):
+        return
+    for name in sorted(os.listdir(PATCH_DIR)):
+        if not patch_applies_to(name, info.version):
+            continue
+        patch_file = os.path.join(PATCH_DIR, name)
+        # skip when the patch is already in the work tree, e.g. the Dart source
+        # directory was checked out by a previous run
+        if subprocess.run([GIT_CMD, 'apply', '--reverse', '--check', patch_file], cwd=clonedir, capture_output=True).returncode == 0:
+            continue
+        print(f'Applying Dart VM patch: {name}')
+        subprocess.run([GIT_CMD, 'apply', patch_file], cwd=clonedir, check=True)
 
 def cmake_dart(info: DartLibInfo, target_dir: str):
     # Dart 3.11.0+ requires C++20 https://github.com/dart-lang/sdk/commit/3ebbaf08fb9236023b8f37bb9e9de85a9be8e281
