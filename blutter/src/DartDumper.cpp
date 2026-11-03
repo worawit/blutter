@@ -10,6 +10,7 @@
 #include "Disassembler.h"
 #include "DartThreadInfo.h"
 #include "CodeAnalyzer.h"
+#include "Util.h"
 
 // TODO: move arm64 specific code to *_arm64 file
 
@@ -100,15 +101,15 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 				if (fnSize > 0) {
 					of << std::format("ida_funcs.add_func({:#x}, {:#x})\n", ep, ep + fnSize);
 				}
-				of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}\")\n", ep, lib_prefix, cls_prefix, name.c_str(), ep);
+				of << std::format("idaapi.set_name({:#x}, \"{}\")\n", ep, Util::EscapePython(std::format("{}_{}::{}_{:x}", lib_prefix, cls_prefix, name, ep)));
 				if (dartFn->HasMorphicCode()) {
 					const auto payloadAddr = dartFn->PayloadAddress();
 					const auto morphicAddr = dartFn->MonomorphicAddress();
 					if (payloadAddr != 0 && payloadAddr != ep) {
-						of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}_miss\")\n", payloadAddr, lib_prefix, cls_prefix, name.c_str(), ep);
+						of << std::format("idaapi.set_name({:#x}, \"{}\")\n", payloadAddr, Util::EscapePython(std::format("{}_{}::{}_{:x}_miss", lib_prefix, cls_prefix, name, ep)));
 					}
 					if (morphicAddr != 0 && morphicAddr != ep && morphicAddr != payloadAddr) {
-						of << std::format("idaapi.set_name({:#x}, \"{}_{}::{}_{:x}_check\")\n", morphicAddr, lib_prefix, cls_prefix, name.c_str(), ep);
+						of << std::format("idaapi.set_name({:#x}, \"{}\")\n", morphicAddr, Util::EscapePython(std::format("{}_{}::{}_{:x}_check", lib_prefix, cls_prefix, name, ep)));
 					}
 				}
 			}
@@ -123,7 +124,7 @@ void DartDumper::Dump4Ida(std::filesystem::path outDir)
 		std::replace(name.begin(), name.end(), '>', '@');
 		std::replace(name.begin(), name.end(), ',', '&');
 		std::replace(name.begin(), name.end(), ' ', '_');
-		of << std::format("idaapi.set_name({:#x}, \"{}_{:x}\")\n", ep, name.c_str(), ep);
+		of << std::format("idaapi.set_name({:#x}, \"{}_{:x}\")\n", ep, Util::EscapePython(name), ep);
 		if (stub->Size() == 0)
 			continue;
 		of << std::format("ida_funcs.add_func({:#x}, {:#x})\n", ep, ep + stub->Size());
@@ -147,7 +148,7 @@ def create_Dart_structs():
 	struc = ida_struct.get_struc(sid2)
 )CBLOCK";
 	for (const auto& [offset, comment] : comments) {
-		of << "\tida_struct.set_member_cmt(ida_struct.get_member(struc, " << offset << "), '''" << comment << "''', True)\n";
+		of << "\tida_struct.set_member_cmt(ida_struct.get_member(struc, " << offset << "), '''" << Util::EscapePython(comment) << "''', True)\n";
 	}
 	of << "\treturn sid1, sid2\n";
 	of << "thrs, pps = create_Dart_structs()\n";

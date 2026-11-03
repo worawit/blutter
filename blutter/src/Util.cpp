@@ -63,6 +63,26 @@ std::string Util::Quote(const std::string& s)
 	return ss.str();
 }
 
+std::string Util::EscapePython(std::string_view s)
+{
+	std::string res;
+	res.reserve(s.length());
+	for (const char c : s) {
+		const auto uc = (unsigned char)c;
+		if (c == '\\' || c == '\'' || c == '"') {
+			res += '\\';
+			res += c;
+		}
+		else if (uc < 0x20 || uc == 0x7f) {
+			res += std::format("\\x{:02x}", uc);
+		}
+		else {
+			res += c;
+		}
+	}
+	return res;
+}
+
 std::string Util::Unquote(const std::string& s)
 {
 	std::string result;

@@ -87,34 +87,60 @@ DartClass* DartLibrary::AddClass(const dart::Class& cls)
 	return dartCls;
 }
 
+// The library url comes from the snapshot, so a crafted libapp can use one such as "package:../../x"
+// to write outside the output directory. Split on both separators and drop the empty, "." and ".." parts
+// (and parts of only dots and spaces, which Windows trims to "." or "..").
+static std::vector<std::string> safePathParts(std::string_view path)
+{
+	std::vector<std::string> parts;
+	size_t start = 0;
+	while (start <= path.size()) {
+		auto end = path.find_first_of("/\\", start);
+		if (end == std::string_view::npos)
+			end = path.size();
+		const auto part = path.substr(start, end - start);
+		if (part.find_first_not_of(". ") != std::string_view::npos)
+			parts.emplace_back(part);
+		start = end + 1;
+	}
+	return parts;
+}
+
 std::string DartLibrary::CreatePath(const char* base_dir)
 {
 	// create subdirectories for the library file
-	std::string path = base_dir;
-	path.push_back('/');
-	size_t start_pos = 0;
+	std::string_view lib_path = url;
+	std::vector<std::string> parts;
+	std::string ext;
 	if (url.starts_with("package:")) {
-		start_pos = 8; // skip "package:"
+		lib_path.remove_prefix(8); // skip "package:"
 	}
 	else if (url.starts_with("file:///")) {
-		start_pos = url.find("/.dart_tool/") + 1;
+		const auto pos = url.find("/.dart_tool/");
+		if (pos != std::string::npos)
+			lib_path.remove_prefix(pos + 1);
 	}
 	else if (url.starts_with("dart:")) {
-		path.append("dart");
-		std::filesystem::create_directories(path);
-		return path.append("/").append(&url[5]).append(".dart");
+		lib_path.remove_prefix(5);
+		parts.push_back("dart");
+		ext = ".dart";
 	}
 	else {
 		// obfuscated
-		ASSERT(url.find('/') == -1);
-		return path.append(url).append(".dart");
+		ext = ".dart";
 	}
-	const char* lib_path = &url[start_pos]; // skip directory name
-	const char* end = strrchr(lib_path, '/');
-	path.append(lib_path, end);
+	for (auto& part : safePathParts(lib_path))
+		parts.push_back(std::move(part));
+	if (parts.empty()) {
+		parts.push_back(std::format("lib_{}", id));
+		ext = ".dart";
+	}
+
+	std::string path = base_dir;
+	for (size_t i = 0; i + 1 < parts.size(); i++)
+		path.append("/").append(parts[i]);
 	std::filesystem::create_directories(path);
-	path.append(end);
-	return path;
+	return path.append("/").append(parts.back()).append(ext);
 }
 
 void DartLibrary::PrintCommentInfo(std::ostream& of)
