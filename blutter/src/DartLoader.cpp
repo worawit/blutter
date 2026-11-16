@@ -18,6 +18,22 @@ static void init_vm_flags()
 		throw std::runtime_error(error);
 }
 
+#ifdef BLUTTER_DART_SINGLE_SNAPSHOT
+static void init_dart()
+{
+	char* error = NULL;
+
+	Dart_InitializeParams init_params;
+	memset(&init_params, 0, sizeof(init_params));
+	init_params.version = DART_INITIALIZE_PARAMS_CURRENT_VERSION;
+	init_params.start_kernel_isolate = false;
+	// Dart 3.13 removed the VM isolate, so there is no VM snapshot to pass here
+	error = Dart_Initialize(&init_params);
+	if (error) {
+		throw std::runtime_error(error);
+	}
+}
+#else
 static void init_dart(const uint8_t* vm_snapshot_data, const uint8_t* vm_snapshot_instructions)
 {
 	char* error = NULL;
@@ -34,6 +50,7 @@ static void init_dart(const uint8_t* vm_snapshot_data, const uint8_t* vm_snapsho
 		throw std::runtime_error(error);
 	}
 }
+#endif
 
 static Dart_Isolate load_isolate(const uint8_t* isolate_snapshot_data, const uint8_t* isolate_snapshot_instructions)
 {
@@ -46,6 +63,10 @@ static Dart_Isolate load_isolate(const uint8_t* isolate_snapshot_data, const uin
 	// dart 3 is always null safety
 	// null safety is enabled by default on Flutter 2.0 with Dart 2.12 (since April 2021)
 	// null safety flag is removed in https://github.com/dart-lang/sdk/commit/8e2acda7d68702d43eefae0c7b17d314d5c93b00#diff-0c27ee5540bcadf9531563ffd7dc5266b1475db16c6d75b73949611551452348
+#ifdef BLUTTER_DART_SINGLE_SNAPSHOT
+	// Dart 3.13 VM supports only strong null safety
+	flags.null_safety = true;
+#else
 	auto pos = strstr((const char*)isolate_snapshot_data + 0x30, "null-safety");
 	if (pos == NULL) {
 		// the null-safety flag is removed because it is always enabled.
@@ -55,6 +76,7 @@ static Dart_Isolate load_isolate(const uint8_t* isolate_snapshot_data, const uin
 		// "no-null-safety" is set when null safety is disabled. So check for space
 		flags.null_safety = pos[-1] == ' ';
 	}
+#endif
 
 	auto isolate = Dart_CreateIsolateGroup(nullptr, nullptr, isolate_snapshot_data,
 		isolate_snapshot_instructions, &flags,
@@ -70,7 +92,11 @@ Dart_Isolate DartLoader::Load(LibAppInfo& libInfo)
 {
 	init_vm_flags();
 
+#ifdef BLUTTER_DART_SINGLE_SNAPSHOT
+	init_dart();
+#else
 	init_dart(libInfo.vm_snapshot_data, libInfo.vm_snapshot_instructions);
+#endif
 
 	auto isolate = load_isolate(libInfo.isolate_snapshot_data, libInfo.isolate_snapshot_instructions);
 

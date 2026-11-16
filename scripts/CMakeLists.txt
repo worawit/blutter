@@ -88,8 +88,10 @@ if (MSVC)
 	string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 	# remove compiler RTTI option
 	string(REPLACE "/GR" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+	# Dart 3.11+ uses __VA_OPT__ which needs the conforming preprocessor
+	# /utf-8 so MSVC reads the UTF-8 sources correctly on non-UTF-8 codepages (e.g. GBK)
 	set(cc_opts
-		/Oy /GR- /EHs-c-
+		/Oy /GR- /EHs-c- /Zc:preprocessor /utf-8
 	)
 else()
 	set(cc_opts

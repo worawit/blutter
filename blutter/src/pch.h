@@ -37,6 +37,14 @@ PRAGMA_WARNING(push, 0)
 #include <vm/compiler/runtime_offsets_extracted.h>
 PRAGMA_WARNING(pop)
 
+// Dart 3.13 (May 2026) removed the VM isolate. As a result the snapshot symbols were
+// merged from 4 (_kDartVm*/_kDartIsolate*) into 2 (_kDartSnapshotData/_kDartSnapshotText),
+// OBJECT_STORE_STUB_CODE_LIST was folded into VM_STUB_CODE_LIST, and Dart_InitializeParams
+// no longer carries the VM snapshot. kSnapshotDataAsmSymbol is defined only on that new model.
+#ifdef kSnapshotDataAsmSymbol
+#  define BLUTTER_DART_SINGLE_SNAPSHOT 1
+#endif
+
 #ifdef OLD_MAP_SET_NAME
 namespace dart {
 	using Map = LinkedHashMap;

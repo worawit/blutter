@@ -31,6 +31,7 @@ apt install python3-pyelftools python3-requests git cmake ninja-build \
 python scripts\init_env_win.py
 ```
 - Start "x64 Native Tools Command Prompt"
+- On Windows, keep MSYS/Git `usr\bin` **after** MSVC tools on PATH (or remove it) so CMake uses MSVC `link.exe` instead of MSYS `ld.exe` when building dartvm
 
 ### macOS Sequoia
 - Install XCode
