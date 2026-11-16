@@ -132,6 +132,16 @@ def find_compat_macro(dart_version: str, no_analysis: bool):
     
     if no_analysis:
         macros.append('-DNO_CODE_ANALYSIS=1')
+
+    # Dart >= 3.13 single-snapshot layout (_kDartSnapshotData/_kDartSnapshotText).
+    # Also auto-detected in pch.h via kSnapshotDataAsmSymbol; keep both so the
+    # flag is set even if header detection is missed during a partial rebuild.
+    try:
+        major_s, minor_s, *_ = dart_version.split('.')
+        if (int(major_s), int(minor_s)) >= (3, 13):
+            macros.append('-DBLUTTER_DART_SINGLE_SNAPSHOT=1')
+    except Exception:
+        pass
     
     return macros
 

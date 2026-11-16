@@ -45,6 +45,18 @@ add_executable(${BINNAME} ${SRCS})
 
 target_link_libraries(${BINNAME} PRIVATE ${DARTLIB} capstone)
 
+if (MSVC)
+	# Dart 3.13's regexp references ICU (UnicodeSet/UnicodeString and u_* property APIs).
+	# The Dart VM static lib is compiled against external/icu-windows (ICU 73), but
+	# find_package(ICU) in scripts/CMakeLists.txt resolves the library to the Windows SDK
+	# copy (wrong version, without the _73 symbols), so link the matching ICU 73 libs here.
+	set(BLUTTER_ICU_LIB_DIR "${PROJECT_SOURCE_DIR}/../external/icu-windows/lib64")
+	target_link_libraries(${BINNAME} PRIVATE
+		"${BLUTTER_ICU_LIB_DIR}/icuuc.lib"
+		"${BLUTTER_ICU_LIB_DIR}/icuin.lib"
+		"${BLUTTER_ICU_LIB_DIR}/icudt.lib")
+endif()
+
 target_precompile_headers(${BINNAME} PRIVATE "${SRCDIR}/pch.h")
 
 if (MSVC)
@@ -106,6 +118,9 @@ if (NO_METHOD_EXTRACTOR_STUB)
 endif()
 if (UNIFORM_INTEGER_ACCESS)
 	set(defines ${defines} UNIFORM_INTEGER_ACCESS)
+endif()
+if (BLUTTER_DART_SINGLE_SNAPSHOT)
+	set(defines ${defines} BLUTTER_DART_SINGLE_SNAPSHOT)
 endif()
 target_compile_definitions(${BINNAME} PRIVATE ${defines})
 

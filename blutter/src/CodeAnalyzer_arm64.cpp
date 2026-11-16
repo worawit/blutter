@@ -175,8 +175,11 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 		return new VarInteger(imm, VarValue::NativeInt);
 	}
 	else if (objType == dart::ObjectPool::EntryType::kNativeFunction) {
-		//val = pool.RawValueAt(idx);
-		throw std::runtime_error("getting native function pool object from Dart code");
+		// Native-function pool entries show up more often on recent Dart VMs.
+		// Don't abort whole-file analysis; emit a placeholder expression instead.
+		auto imm = pool.RawValueAt(idx);
+		auto txt = std::format("NativeFunction_{:#x}", (uintptr_t)imm);
+		return new VarExpression(txt);
 	}
 	else {
 		throw std::runtime_error(std::format("unknown pool object type: {}", (int)objType).c_str());
@@ -677,18 +680,7 @@ std::unique_ptr<CallLeafRuntimeInstr> FunctionAnalyzer::processCallLeafRuntime(A
 		std::vector<std::unique_ptr<MoveRegInstr>> movILs;
 		while (true) {
 			auto il = processMoveRegInstr(insn);
-			if (!il) {
-				// Dart 3.11+ may emit an unscaled load from the caller frame
-				// (e.g., ldur x2, [x29, #-8]) to reload a parameter before the
-				// leaf runtime call. It is not a register move, so skip it.
-				if ((insn.id() == ARM64_INS_LDR || insn.id() == ARM64_INS_LDUR) && insn.ops(1).mem.base == CSREG_DART_FP) {
-					++insn;
-					continue;
-				}
-				else {
-					INSN_ASSERT(il);
-				}
-			}
+			INSN_ASSERT(il);
 			if (il->srcReg == A64::Register::FP) {
 				INSN_ASSERT(il->dstReg == A64::Register::TMP2);
 				break;
@@ -1999,8 +1991,11 @@ std::unique_ptr<SetupParametersInstr> FunctionAnalyzer::processPrologueParameter
 		++insn;
 	}
 
+#ifndef BLUTTER_DART_SINGLE_SNAPSHOT
 	// PrologueBuilder::BuildClosureContextHandling()
 	// closure context handling
+	// TODO: Dart 3.13 replaced Closure's fixed context_offset with a variable-length
+	// elements[] region, so this fixed-offset analysis no longer applies. Disabled for now.
 	if (dartFn->IsClosure() && insn.id() == ARM64_INS_LDUR && insn.ops(1).mem.disp == AOT_Closure_context_offset - dart::kHeapObjectTag) {
 		const auto arg1Reg = [&] {
 			if (fnInfo->params.numFixedParam > 0) {
@@ -2031,6 +2026,8 @@ std::unique_ptr<SetupParametersInstr> FunctionAnalyzer::processPrologueParameter
 			}
 	}
 
+#endif
+
 	// TypeArgument from Arguments Descriptor might be used
 	if (argsDescReg != ARM64_REG_INVALID)
 		handleArgumentsDescriptorTypeArguments(insn);
@@ -2038,7 +2035,10 @@ std::unique_ptr<SetupParametersInstr> FunctionAnalyzer::processPrologueParameter
 	if (endPrologueAddr != 0 && insn.address() < endPrologueAddr)
 		handleInitialization();
 
+#ifndef BLUTTER_DART_SINGLE_SNAPSHOT
 	// closure delayed type arguments
+	// TODO: Dart 3.13 moved the delayed type arguments into Closure's elements[]; the old
+	// fixed AOT_Closure_delayed_type_arguments_offset is gone. Disabled for now.
 	if (dartFn->IsClosure()) {
 		const auto save_ins = insn.Current();
 
@@ -2152,6 +2152,7 @@ std::unique_ptr<SetupParametersInstr> FunctionAnalyzer::processPrologueParameter
 			insn.SetCurrent(save_ins);
 		}
 	}
+#endif
 
 	if (insn.address() < endPrologueAddr) {
 		// short-lived aliases for prologue parameter register shuffle
