@@ -81,15 +81,23 @@ LibAppInfo ElfHelper::findSnapshots(const uint8_t* elf)
 	const char* dynstr = nullptr;
 	const Symbol* dynsym = nullptr;
 	const Symbol* dynsym_end = nullptr;
+	// A SPLIT snapshot exports "_kDartVmSnapshotData"; a UNIFIED snapshot exports only
+	// "_kDartSnapshotData". Identify .dynstr (vs .strtab/.shstrtab) by searching for
+	// whichever of those two strings is present.
+	static const char* const kUnifiedSnapshotDataSymbol = "_kDartSnapshotData";
+	static const char* const kUnifiedSnapshotTextSymbol = "_kDartSnapshotText";
 	for (uint16_t i = 0; i < sh_num; i++, section++) {
 		if (section->type == SectionHeaderType::SHT_STRTAB && dynstr == nullptr) {
 			// we want only .dynstr for .dynsym
 			const char* strtab = (const char*)elf + section->file_offset;
 			const char* last = strtab + section->file_size;
-			const char* s_first = kVmSnapshotDataAsmSymbol;
-			const char* s_last = s_first + strlen(kVmSnapshotDataAsmSymbol) + 1;
-			//if (memmem(strtab, section->s_size, kVmSnapshotDataAsmSymbol, strlen(kVmSnapshotDataAsmSymbol))) {
-			if (std::search(strtab, last, s_first, s_last) != last) {
+			auto contains = [&](const char* needle) {
+				const char* n_first = needle;
+				const char* n_last = needle + strlen(needle) + 1;
+				return std::search(strtab, last, n_first, n_last) != last;
+			};
+			// Dart 3.13.x only emits the UNIFIED snapshot symbols.
+			if (contains(kUnifiedSnapshotDataSymbol)) {
 				// found it
 				dynstr = strtab;
 			}
@@ -104,46 +112,38 @@ LibAppInfo ElfHelper::findSnapshots(const uint8_t* elf)
 			break;
 	}
 
-	// find the required symbol addresses
-	const uint8_t* vm_snapshot_data = nullptr;
-	const uint8_t* vm_snapshot_instructions = nullptr;
-	const uint8_t* isolate_snapshot_data = nullptr;
-	const uint8_t* isolate_snapshot_instructions = nullptr;
+	// find the required symbol addresses (UNIFIED snapshot: a single combined blob)
+	const uint8_t* unified_snapshot_data = nullptr;
+	const uint8_t* unified_snapshot_instructions = nullptr;
 	for (; dynsym < dynsym_end; dynsym++) {
 		if (dynsym->info == 0)
 			continue;
 
 		const char* name = dynstr + dynsym->name;
 		// Note: sym_size is no needed for dart VM (its blob contains size)
-		if (strcmp(name, kVmSnapshotDataAsmSymbol) == 0) {
-			vm_snapshot_data = elf + dynsym->value;
+		if (strcmp(name, kUnifiedSnapshotDataSymbol) == 0) {
+			unified_snapshot_data = elf + dynsym->value;
 		}
-		else if (strcmp(name, kVmSnapshotInstructionsAsmSymbol) == 0) {
-			vm_snapshot_instructions = elf + dynsym->value;
-		}
-		else if (strcmp(name, kIsolateSnapshotDataAsmSymbol) == 0) {
-			isolate_snapshot_data = elf + dynsym->value;
-		}
-		else if (strcmp(name, kIsolateSnapshotInstructionsAsmSymbol) == 0) {
-			isolate_snapshot_instructions = elf + dynsym->value;
+		else if (strcmp(name, kUnifiedSnapshotTextSymbol) == 0) {
+			unified_snapshot_instructions = elf + dynsym->value;
 		}
 	}
 
-	if (vm_snapshot_data == nullptr)
-		throw std::invalid_argument("ELF: Cannot find Dart VM Snapshot Data");
-	if (vm_snapshot_instructions == nullptr)
-		throw std::invalid_argument("ELF: Cannot find Dart VM Snapshot Instructions");
-	if (isolate_snapshot_data == nullptr)
-		throw std::invalid_argument("ELF: Cannot find Dart Isolate Snapshot Data");
-	if (isolate_snapshot_instructions == nullptr)
-		throw std::invalid_argument("ELF: Cannot find Dart Isolate Snapshot Instructions");
+	// UNIFIED format: only _kDartSnapshotData/_kDartSnapshotText are present.
+	// The single combined blob is loaded as the isolate snapshot; there is no separate
+	// VM snapshot in this Dart version (Dart_InitializeParams no longer carries one).
+	if (unified_snapshot_data == nullptr)
+		throw std::invalid_argument("ELF: Cannot find Dart Snapshot Data (_kDartSnapshotData)");
+	if (unified_snapshot_instructions == nullptr)
+		throw std::invalid_argument("ELF: Cannot find Dart Snapshot Text (_kDartSnapshotText)");
 
 	return LibAppInfo{
 		.lib = elf,
-		.vm_snapshot_data = vm_snapshot_data,
-		.vm_snapshot_instructions = vm_snapshot_instructions,
-		.isolate_snapshot_data = isolate_snapshot_data,
-		.isolate_snapshot_instructions = isolate_snapshot_instructions,
+		.vm_snapshot_data = nullptr,
+		.vm_snapshot_instructions = nullptr,
+		.isolate_snapshot_data = unified_snapshot_data,
+		.isolate_snapshot_instructions = unified_snapshot_instructions,
+		.unified = true,
 	};
 }
 

@@ -115,7 +115,9 @@ void FridaWriter::Create(const char* filename)
 				of << "{id:" << dartCls->Id() << ",";
 				of << "name:\"Closure\",";
 				of << "fnOffset:" << AOT_Closure_function_offset << ",";
-				of << "contextOffset:" << AOT_Closure_context_offset << ",";
+				// Dart 3.13 restructured Closure (variable-length); the fixed context offset was
+				// removed. Emit the entry-point offset as a stand-in so the frida script still builds.
+				of << "contextOffset:" << AOT_Closure_entry_point_offset << ",";
 				of << "epOffset:" << AOT_Closure_entry_point_offset << "},\n";
 				break;
 			case dart::kTypedDataUint8ArrayCid:

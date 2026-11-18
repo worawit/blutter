@@ -22,11 +22,15 @@ static void init_dart(const uint8_t* vm_snapshot_data, const uint8_t* vm_snapsho
 {
 	char* error = NULL;
 
+	// Dart 3.13.x uses a UNIFIED snapshot: Dart_InitializeParams no longer carries a VM
+	// snapshot (the fields were removed). The combined VM+isolate blob is loaded entirely
+	// as the isolate snapshot in load_isolate(), so there is nothing to pass here.
+	(void)vm_snapshot_data;
+	(void)vm_snapshot_instructions;
+
 	Dart_InitializeParams init_params;
 	memset(&init_params, 0, sizeof(init_params));
 	init_params.version = DART_INITIALIZE_PARAMS_CURRENT_VERSION;
-	init_params.vm_snapshot_data = vm_snapshot_data;
-	init_params.vm_snapshot_instructions = vm_snapshot_instructions;
 	init_params.start_kernel_isolate = false;
 	// other params are no needed if snapshot is not run
 	error = Dart_Initialize(&init_params);
