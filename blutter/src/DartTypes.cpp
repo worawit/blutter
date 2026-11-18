@@ -307,6 +307,12 @@ DartFunctionType* DartTypeDb::FindOrAdd(dart::FunctionTypePtr fnTypePtr)
 
 DartAbstractType* DartTypeDb::FindOrAdd(dart::AbstractTypePtr abTypePtr)
 {
+	// In AOT snapshots a function signature's result/parameter type can be stripped to the
+	// null object (cid kNullCid). Treat a missing type as 'dynamic' instead of aborting.
+	if (abTypePtr == dart::AbstractType::null() ||
+		abTypePtr.GetClassId() == dart::kNullCid) {
+		return FindOrAdd(dart::Type::RawCast(dart::Type::DynamicType()));
+	}
 	switch (abTypePtr.GetClassId()) {
 	case dart::kTypeCid:
 		return FindOrAdd(dart::Type::RawCast(abTypePtr));
@@ -327,7 +333,7 @@ DartAbstractType* DartTypeDb::FindOrAdd(dart::AbstractTypePtr abTypePtr)
 		return FindOrAdd(dart::FunctionType::RawCast(abTypePtr));
 	}
 	//return nullptr;
-	FATAL("Invalid abstract type");
+	FATAL("Invalid abstract type (cid=%d)", (int)abTypePtr.GetClassId());
 }
 
 const DartTypeArguments* DartTypeDb::FindOrAdd(dart::TypeArgumentsPtr typeArgsPtr)

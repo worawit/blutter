@@ -315,12 +315,13 @@ void DartApp::loadStubs(dart::ObjectStore* store)
 #endif
 #undef DO
 	
-	code = store->throw_stub();
-	throwStubAddr = code.EntryPoint();
+	// Dart 3.13: ObjectStore no longer caches the throw stub; it is a VM stub now.
+	throwStubAddr = dart::StubCode::Throw().EntryPoint();
 
 	// load VM stub code
 	// the dart entry point "static void main()" is a LazyCompileVMStub which call "main" stub (a real main)
-	ASSERT(dart::StubCode::HasBeenInitialized());
+	// Dart 3.13: StubCode::HasBeenInitialized() was removed; stubs are initialized by
+	// Dart_CreateIsolateGroup, so the assert is dropped.
 #define DO(name) {\
 		const auto& code = dart::StubCode::name(); \
 		ep_addr = code.EntryPoint() - base(); \

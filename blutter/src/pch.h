@@ -112,4 +112,27 @@ namespace dart {
 #  define DartGetRecordType(record) record.GetRecordType()
 #endif
 
+// Dart 3.13 removed OBJECT_STORE_STUB_CODE_LIST: the object store no longer caches
+// stub code (allocation / megamorphic / method-extractor stubs). Define it empty so the
+// enum and loadStubs() still build; those stubs are now discovered via StubCode instead.
+#ifndef OBJECT_STORE_STUB_CODE_LIST
+#  define OBJECT_STORE_STUB_CODE_LIST(DO)
+#  define NO_OBJECT_STORE_STUB_CODE_LIST 1
+#endif
+
+// Dart 3.13 turned Closure into a variable-length object: the fixed field offsets
+// AOT_Closure_context_offset / AOT_Closure_delayed_type_arguments_offset were removed and
+// those slots became closure "elements" at flag-dependent indices. For the common closure
+// shape (no instantiator/function/delayed type arguments) the delayed-type-arguments slot
+// (index 0) and the context slot (index 0) both coincide with the first element, i.e.
+// AOT_Closure_elements_start_offset. Provide the old names so CodeAnalyzer still compiles
+// and matches that common prologue shape. (blutter.py sets NO_CLOSURE_TYPEARG_OFFSETS when
+// the extracted offsets header no longer defines these constants.)
+#ifdef NO_CLOSURE_TYPEARG_OFFSETS
+static constexpr dart::compiler::target::word AOT_Closure_context_offset =
+	AOT_Closure_elements_start_offset;
+static constexpr dart::compiler::target::word AOT_Closure_delayed_type_arguments_offset =
+	AOT_Closure_elements_start_offset;
+#endif
+
 #endif //PCH_H

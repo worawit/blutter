@@ -15,9 +15,17 @@ from elftools.elf.sections import SymbolTableSection
 def extract_snapshot_hash_flags(libapp_file):
     with open(libapp_file, 'rb') as f:
         elf = ELFFile(f)
-        # find "_kDartVmSnapshotData" symbol
+        # find the snapshot-data symbol that carries the version hash + flags string.
+        # SPLIT snapshots export "_kDartVmSnapshotData"; UNIFIED snapshots export only
+        # "_kDartSnapshotData" (combined VM+isolate blob). Both share the same header
+        # layout (magic, then 32-byte version hash at +20, then null-terminated flags),
+        # so reading the hash/flags from either is correct.
         dynsym = elf.get_section_by_name('.dynsym')
-        sym = dynsym.get_symbol_by_name('_kDartVmSnapshotData')[0]
+        sym_ent = dynsym.get_symbol_by_name('_kDartVmSnapshotData')
+        if sym_ent is None:
+            sym_ent = dynsym.get_symbol_by_name('_kDartSnapshotData')
+        assert sym_ent is not None, 'Cannot find _kDartVmSnapshotData or _kDartSnapshotData symbol'
+        sym = sym_ent[0]
         #section = elf.get_section(sym['st_shndx'])
         assert sym['st_size'] > 128
         f.seek(sym['st_value']+20)

@@ -175,8 +175,11 @@ static VarValue* getPoolObject(DartApp& app, intptr_t offset, A64::Register dstR
 		return new VarInteger(imm, VarValue::NativeInt);
 	}
 	else if (objType == dart::ObjectPool::EntryType::kNativeFunction) {
-		//val = pool.RawValueAt(idx);
-		throw std::runtime_error("getting native function pool object from Dart code");
+		// A native-function pool entry holds a raw C function pointer (e.g. an FFI
+		// trampoline / runtime entry). Represent it by its address instead of aborting
+		// analysis, so FFI-heavy code can be decoded.
+		auto nativeAddr = pool.RawValueAt(idx);
+		return new VarInteger(nativeAddr, VarValue::NativeInt);
 	}
 	else {
 		throw std::runtime_error(std::format("unknown pool object type: {}", (int)objType).c_str());
@@ -481,6 +484,12 @@ FunctionAnalyzer::ObjectPoolInstr FunctionAnalyzer::getObjectPoolInstruction(Asm
 
 void FunctionAnalyzer::printInsnException(InsnException& e)
 {
+	// Dart 3.13 port: the analyzer hits many benign INSN_ASSERT mismatches (new codegen
+	// patterns) that are caught and skipped per-function. Printing a context window for each
+	// produces thousands of pages of output and dominates runtime via I/O. Silence it; set
+	// BLUTTER_VERBOSE_INSN to re-enable for debugging.
+	if (getenv("BLUTTER_VERBOSE_INSN") == nullptr)
+		return;
 	std::cerr << "Analysis error at line " << e.location.line()
 		<< " `" << e.location.function_name() << "`: " << e.cond << '\n';
 	const uint64_t fn_addr = fnInfo->dartFn.Address();

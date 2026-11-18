@@ -130,9 +130,19 @@ def find_compat_macro(dart_version: str, no_analysis: bool):
         if mm.find(b'AsTruncatedInt64Value()') == -1:
             macros.append('-DUNIFORM_INTEGER_ACCESS=1')
     
+    # Dart 3.13 removed the fixed Closure context/delayed-type-arguments offsets
+    # (Closure became a variable-length object). Detect their absence so pch.h can
+    # supply compatible fallbacks for CodeAnalyzer.
+    offsets_path = os.path.join(vm_path, 'compiler', 'runtime_offsets_extracted.h')
+    if os.path.isfile(offsets_path):
+        with open(offsets_path, 'rb') as f:
+            mm = mmap.mmap(f.fileno(), 0, access = mmap.ACCESS_READ)
+            if mm.find(b'AOT_Closure_context_offset') == -1:
+                macros.append('-DNO_CLOSURE_TYPEARG_OFFSETS=1')
+
     if no_analysis:
         macros.append('-DNO_CODE_ANALYSIS=1')
-    
+
     return macros
 
 def cmake_blutter(input: BlutterInput):

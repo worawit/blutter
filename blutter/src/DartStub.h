@@ -22,6 +22,23 @@ public:
 		AllocateUserObjectStub,
 		TypeCheckStub,
 		UnknownStub,
+#ifdef NO_OBJECT_STORE_STUB_CODE_LIST
+		// Dart 3.13 moved these stubs from the object store to the VM stub list, so they
+		// are now loaded as "<name>VMStub". Alias the pre-3.13 object-store enum names
+		// (used throughout CodeAnalyzer) to the matching VM stub enumerators, so both
+		// names denote the same kind and the analyzer keeps compiling and matching.
+		ArrayWriteBarrierStub = ArrayWriteBarrierVMStub,
+		WriteBarrierWrappersStub = WriteBarrierWrappersVMStub,
+		DefaultTypeTestStub = DefaultTypeTestVMStub,
+		DefaultNullableTypeTestStub = DefaultNullableTypeTestVMStub,
+		InitLateStaticFieldStub = InitLateStaticFieldVMStub,
+		InitLateFinalStaticFieldStub = InitLateFinalStaticFieldVMStub,
+		InitAsyncStub = InitAsyncVMStub,
+		AllocateMintSharedWithFPURegsStub = AllocateMintSharedWithFPURegsVMStub,
+		AllocateMintSharedWithoutFPURegsStub = AllocateMintSharedWithoutFPURegsVMStub,
+		LateInitializationErrorSharedWithFPURegsStub = LateInitializationErrorSharedWithFPURegsVMStub,
+		LateInitializationErrorSharedWithoutFPURegsStub = LateInitializationErrorSharedWithoutFPURegsVMStub,
+#endif
 	};
 
 	DartStub(const dart::CodePtr ptr, Kind kind, uint64_t addr, int64_t size, std::string name) :
