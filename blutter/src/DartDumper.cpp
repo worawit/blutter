@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include <numeric>
+#include <unordered_set>
 #include "Disassembler.h"
 #include "DartThreadInfo.h"
 #include "CodeAnalyzer.h"
@@ -299,17 +300,40 @@ const std::string& DartDumper::getQuoteString(dart::Object& obj)
 	return txt;
 }
 
+static std::string toLower(std::string text)
+{
+	std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) { return std::tolower(ch); });
+	return text;
+}
+
+static std::string casePattern(const std::string& text)
+{
+	std::string pattern;
+	for (unsigned char ch : text) {
+		if (std::isupper(ch))
+			pattern.push_back('U');
+		else if (std::islower(ch))
+			pattern.push_back('l');
+	}
+	return pattern;
+}
+
 void DartDumper::DumpCode(const char* out_dir)
 {
 	std::filesystem::create_directory(out_dir);
 
 	Disassembler disasmer;
 
+	std::unordered_set<std::string> takenPaths;
+
 	for (auto dartLib : app.libs) {
 		if (dartLib->isInternal)
 			continue;
 
 		auto out_file = dartLib->CreatePath(out_dir);
+		if (takenPaths.contains(toLower(out_file)))
+			out_file.insert(out_file.length() - 5, "_" + casePattern(dartLib->url));
+		takenPaths.insert(toLower(out_file));
 		std::ofstream of(out_file);
 		dartLib->PrintCommentInfo(of);
 
